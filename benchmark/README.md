@@ -222,6 +222,83 @@ You can also specify a different configuration file as an argument:
 sbt "runDataproc my_benchmark_config.json"
 ```
 
+### Running on Databricks
+
+To run benchmarks on Databricks, you will use the `runDatabricksNotebook` sbt task. This task uploads the necessary connector JAR to a Unity Catalog Volume, imports a benchmark notebook to your Databricks workspace, and then executes the notebook on a specified cluster.
+
+#### Configuration
+
+The `runDatabricksNotebook` task reads its configuration from `benchmarkDatabricks.json`. This file contains Databricks-specific settings and the benchmark parameters.
+
+Ensure your `benchmarkDatabricks.json` file is configured correctly:
+
+```json
+{
+  "databricksHost": "https://your-databricks-host",
+  "databricksToken": "your-databricks-token",
+  "clusterId": "your-cluster-id",
+  "notebookPath": "/Users/Shared/SparkSpannerBenchmark",
+  "localNotebookPath": "notebooks/SparkSpannerBenchmark.scala",
+  "ucVolumePath": "/Volumes/your_catalog/your_schema/your_volume/jars",
+  
+  "projectId": "your-gcp-project-id",
+  "instanceId": "your-spanner-instance-id",
+  "databaseId": "your-spanner-database-id",
+  "writeTable": "your-spanner-table",
+
+  "numRecords": 100000,
+  "numPartitions": 40,
+  "mutationsPerTransaction": 5000,
+  "bytesPerTransaction": 3145728,
+  "numWriteThreads": 4,
+  "maxPendingTransactions": 5,
+  "assumeIdempotentRows": true
+}
+```
+
+*   `databricksHost`: The URL of your Databricks workspace.
+*   `databricksToken`: A Databricks personal access token.
+*   `clusterId`: The ID of the Databricks cluster where the notebook will be executed.
+*   `notebookPath`: The absolute path in your Databricks workspace where the notebook will be imported (e.g., `/Users/your.email@example.com/SparkSpannerBenchmark`).
+*   `localNotebookPath`: The path to the local notebook file (relative to the `benchmark` directory).
+*   `ucVolumePath`: The Unity Catalog Volume path where the connector JAR will be uploaded (e.g., `/Volumes/catalog/schema/volume/jars`).
+
+#### How to get Cluster ID
+
+To obtain the Cluster ID:
+1.  Navigate to your Databricks workspace.
+2.  In the sidebar, click **Compute**.
+3.  Click on the name of the cluster you intend to use for the benchmark.
+4.  In the cluster configuration page, the Cluster ID will be displayed in the URL, usually after `/clusters/`. For example, in `https://<databricks-host>/#setting/clusters/<cluster-id>/configuration`, `<cluster-id>` is your Cluster ID.
+
+#### Running the Benchmark
+
+Before running, ensure you have:
+1.  Built and installed the Spark Spanner Connector to your local Maven repository using `mvn clean install -P<spark_version>` (e.g., `mvn clean install -P3.3`).
+2.  Configured `benchmarkDatabricks.json` with all necessary Databricks and benchmark parameters.
+3.  Set up your Databricks CLI with authentication to your workspace.
+
+To execute the benchmark on Databricks:
+
+```bash
+# From the benchmark directory
+sbt runDatabricksNotebook
+```
+
+You can also specify a different configuration file:
+```bash
+sbt "runDatabricksNotebook my_databricks_config.json"
+```
+
+The task will:
+1.  Find the locally built Spark Spanner Connector JAR.
+2.  Upload the JAR to the specified Unity Catalog Volume.
+3.  Install the JAR as a library on the Databricks cluster.
+4.  Import the local benchmark notebook to your Databricks workspace.
+5.  Run the notebook on the cluster, passing the benchmark parameters.
+6.  Uninstall the JAR from the cluster after the notebook run completes.
+
+
 ## Benchmark Results
 
 After a benchmark run is complete, the results are stored as a JSON file in the results GCS bucket.
@@ -239,3 +316,24 @@ For example:
 `gs://my-spark-spanner-bench-results/SparkSpannerWriteBenchmark/2026-01-07T12-00-00Z_a1b2c3d4.json`
 
 Each JSON file contains detailed information about the run, including performance metrics, configuration parameters, and versions. For the detailed schema, see `RESULTS_SCHEMA.md`.
+
+## Troubleshooting
+
+### "Error: Catalog 'X' is not accessible in current workspace"
+
+This error indicates a mismatch between the Databricks workspace targeted by your CLI configuration and the one specified in `benchmarkDatabricks.json`, or a lack of proper permissions.
+
+**Possible Causes and Solutions:**
+
+1.  **Workspace Host Mismatch**:
+    *   **Diagnosis**: Your `databricks auth describe` command might show a different `Host` than the `databricksHost` value in your `benchmarkDatabricks.json`. The `sbt` task uses the host from `benchmarkDatabricks.json`.
+    *   **Solution**: Update the `databricksHost` in `benchmarkDatabricks.json` to match the host of the Databricks workspace where your Unity Catalog is correctly configured and accessible. Ensure all other Databricks-specific settings (`clusterId`, `ucVolumePath`) are valid for this workspace.
+
+2.  **Insufficient Permissions**: Even if the catalog is bound to the workspace, the user or service principal associated with your `databricksToken` might lack the necessary permissions.
+    *   **Diagnosis**:
+        *   Identify your user: `databricks auth describe`
+        *   List accessible catalogs: `databricks catalogs list` (check if your catalog is listed)
+        *   Check catalog permissions: `databricks grants get catalog your_catalog_name` (look for `USE_CATALOG`)
+        *   Check schema permissions: `databricks grants get schema your_catalog_name.your_schema_name` (look for `USE_SCHEMA`)
+        *   Check volume permissions: `databricks grants get volume your_catalog_name.your_schema_name.your_volume_name` (look for `WRITE_VOLUME` and `READ_VOLUME`)
+    *   **Solution**: A Databricks administrator needs to grant the required privileges to your user or a group you belong to. Specifically, ensure `USE_CATALOG`, `USE_SCHEMA`, and `WRITE_VOLUME`/`READ_VOLUME` (or `ALL_PRIVILEGES`) are granted.
