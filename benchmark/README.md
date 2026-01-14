@@ -298,6 +298,81 @@ The task will:
 5.  Run the notebook on the cluster, passing the benchmark parameters.
 6.  Uninstall the JAR from the cluster after the notebook run completes.
 
+#### Providing GCP Credentials on Databricks
+
+When running the benchmark notebook on Databricks, the cluster needs to authenticate to Google Cloud to access Spanner. The recommended and most secure method is to use Databricks secrets backed by an init script.
+
+This method avoids exposing credentials in notebooks and uses the cluster's environment variables to securely pass the credentials to the Google Cloud client libraries.
+
+##### Step 1: Store GCP Service Account Key in Databricks Secrets
+
+First, you need to store your GCP service account JSON key file as a secret in your Databricks workspace.
+
+1.  **Create a Secret Scope:** If you don't have one already, create a secret scope.
+    ```bash
+    databricks secrets create-scope --scope your-secret-scope
+    ```
+
+2.  **Add the Secret:** Add the content of your GCP service account JSON key file as a secret within this scope.
+    ```bash
+    databricks secrets put-secret --scope your-secret-scope --key your-gcp-key-name --binary-file /path/to/your/gcp-credentials.json
+    ```
+
+##### Step 2: Create and Upload the Init Script
+
+Next, create an init script that will run on cluster startup. This script reads the secret content from an environment variable and writes it to the location where Google Cloud libraries expect to find Application Default Credentials (ADC).
+
+1.  **Create the script file:** Create a file named `setup_gcp_credentials.sh` with the following content. A copy of this script is also available in the `benchmark` directory.
+    ```bash
+    #!/bin/bash
+    # This script configures Google Application Default Credentials on a Databricks cluster.
+    set -e
+
+    # This environment variable must be configured on the cluster to point to the Databricks secret.
+    GCP_CREDENTIALS_CONTENT="$GCP_CREDENTIALS"
+
+    if [ -z "$GCP_CREDENTIALS_CONTENT" ]; then
+      echo "Error: The GCP_CREDENTIALS environment variable is not set." >&2
+      echo "Please configure this in the Spark Cluster Environment Variables:" >&2
+      echo "GCP_CREDENTIALS={{secrets/your-secret-scope/your-gcp-key-name}}" >&2
+      exit 1
+    fi
+
+    ADC_DIR="/root/.config/gcloud"
+    ADC_FILE="$ADC_DIR/application_default_credentials.json"
+
+    echo "Creating directory for ADC file: $ADC_DIR"
+    mkdir -p "$ADC_DIR"
+
+    echo "Writing credentials to $ADC_FILE"
+    cat > "$ADC_FILE" <<EOF
+$GCP_CREDENTIALS_CONTENT
+EOF
+
+    echo "Successfully configured Google Application Default Credentials."
+    ```
+
+2.  **Upload the script:** Upload this script to a location in your Databricks File System (DBFS).
+    ```bash
+    databricks fs cp setup_gcp_credentials.sh dbfs:/databricks/init_scripts/setup_gcp_credentials.sh
+    ```
+
+##### Step 3: Configure the Databricks Cluster
+
+Finally, configure your cluster to use the secret and the init script.
+
+1.  Navigate to your cluster's configuration page.
+2.  Under **Advanced Options**, select the **Spark** tab.
+3.  In the **Environment Variables** text box, add the following line. This tells Databricks to securely inject your secret's content into the `GCP_CREDENTIALS` environment variable.
+    ```
+    GCP_CREDENTIALS={{secrets/your-secret-scope/your-gcp-key-name}}
+    ```
+    Replace `your-secret-scope` and `your-gcp-key-name` with the actual scope and key you used in Step 1.
+
+4.  Select the **Init Scripts** tab.
+5.  Add the path to the init script you uploaded to DBFS, for example: `dbfs:/databricks/init_scripts/setup_gcp_credentials.sh`.
+6.  Restart your cluster for the changes to take effect. The init script will now run on every startup, ensuring credentials are in place.
+
 
 ## Benchmark Results
 
