@@ -17,6 +17,7 @@ object CustomTasks {
   lazy val runDatabricksNotebook = inputKey[Unit]("Runs a notebook on Databricks.")
   lazy val addJarToAllowlist = inputKey[Unit]("Adds a JAR path prefix to the Databricks artifact allowlist.")
   lazy val removeJarFromAllowlist = inputKey[Unit]("Removes a JAR path prefix from the Databricks artifact allowlist.")
+  lazy val refreshDatabricksToken = inputKey[Unit]("Refreshes the Databricks token.")
 
   private def loadBenchmarkConfig(file: File): JsValue = {
     Json.parse(IO.read(file))
@@ -90,11 +91,19 @@ object CustomTasks {
       println("JAR installed on cluster successfully.")
       
       // 5. Import notebook
+      val language = localNotebookPath.substring(localNotebookPath.lastIndexOf('.') + 1).toUpperCase match {
+        case "PY" => "PYTHON"
+        case "SQL" => "SQL"
+        case "R" => "R"
+        case "SCALA" => "SCALA"
+        case other => sys.error(s"Unsupported notebook language extension: .$other")
+      }
+
       println(s"Importing notebook $localNotebookPath to $notebookPath on Databricks...")
       val importCommand = Seq(
-        "databricks", "workspace", "import", notebookPath, 
-        "--file", (baseDirectory.value / localNotebookPath).toString(), 
-        "--language", "SCALA",
+        "databricks", "workspace", "import", notebookPath,
+        "--file", (baseDirectory.value / localNotebookPath).toString(),
+        "--language", language,
         "--format", "SOURCE",
         "--overwrite"
       )
@@ -162,6 +171,35 @@ object CustomTasks {
           println("JAR uninstalled successfully.")
         }
       }
+    },
+
+    refreshDatabricksToken := {
+      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
+
+      println("Requesting new Databricks token via Databricks CLI...")
+      val lifetimeSeconds = 3600 // 1 hour
+      val createTokenCommand = Seq(
+        "databricks", "tokens", "create",
+        "--comment", "Temporary token for Spark Spanner benchmark",
+        "--lifetime-seconds", lifetimeSeconds.toString
+      )
+
+      val output = try {
+        Process(createTokenCommand).!!.trim
+      } catch {
+        case ex: Exception => sys.error("Failed to create Databricks token. Make sure the Databricks CLI is installed and configured with a valid token that has permission to create new tokens.")
+      }
+
+      val tokenJson = Json.parse(output)
+      val newToken = (tokenJson \ "token_value").as[String]
+
+      val config = loadBenchmarkConfig(configFile)
+      val updatedConfig = config.as[JsObject] + ("databricksToken" -> Json.toJson(newToken))
+      val updatedJsonString = Json.prettyPrint(updatedConfig)
+
+      IO.write(configFile, updatedJsonString)
+      println(s"Successfully updated databricksToken in $configFile.")
     },
 
     addJarToAllowlist := {
