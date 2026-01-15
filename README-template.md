@@ -111,7 +111,7 @@ enableDataboost|Boolean|Enable the [Data Boost](https://cloud.google.com/spanner
 ### Writing to Spanner Tables (Preview)
 > Note: Write support is a preview feature.
 
-This is an example of using Python code to write to a Spanner table.
+This is an example of using Python to write to a Spanner table.
 ```python
 from pyspark.sql import SparkSession
 
@@ -140,6 +140,36 @@ instanceId|String|The instanceID of the Cloud Spanner database
 databaseId|String|The databaseID of the Cloud Spanner database
 table|String|The Table of the Cloud Spanner database that you are writing to
 batchSize|Long|The number of rows to send in a single batch. Default: 1000
+
+#### Data Types
+The connector supports writing the following Spark data types to Spanner.
+
+##### GoogleSQL
+Spark Data Type|Spanner GoogleSql Type
+---|---
+`LongType`|`INT64`
+`StringType`|`STRING`
+`BooleanType`|`BOOL`
+`DoubleType`|`FLOAT64`
+`BinaryType`|`BYTES`
+`TimestampType`|`TIMESTAMP`
+`DateType`|`DATE`
+`DecimalType`|`NUMERIC`
+
+##### PostgreSQL
+Spark Data Type|Spanner PostgreSql Type
+---|---
+`LongType`|`bigint`/`int8`
+`StringType`|`varchar`/`text`/`character varying`
+`BooleanType`|`bool`/`boolean`
+`DoubleType`|`double precision`/`float8`
+`BinaryType`|`bytea`
+`TimestampType`|`timestamptz`/`timestamp with time zone`
+`DateType`|`date`
+`DecimalType`|`numeric`/`decimal`
+
+> Note: `ArrayType`, and `StructType` are not currently supported.
+
 
 
 ### Exporting Spanner Graphs
