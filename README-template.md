@@ -138,7 +138,7 @@ Variable|Validation|Comments
 projectId|String|The projectID containing the Cloud Spanner database
 instanceId|String|The instanceID of the Cloud Spanner database
 databaseId|String|The databaseID of the Cloud Spanner database
-table|String|The Table of the Cloud Spanner database that you are writing to
+table|String|The name of the destination Cloud Spanner table
 batchSize|Long|The number of rows to send in a single batch. Default: 1000
 numWriteThreads|Integer|The number of threads to use for writing per Spark worker. This controls the parallelism of the write operation. Default: 8
 assumeIdempotentRows|Boolean|When `true`, the connector uses a higher-throughput 'at-least-once' write mode. See [Spanner documentation](https://docs.cloud.google.com/spanner/docs/batch-write) for use cases and limitations. Default: `false`
