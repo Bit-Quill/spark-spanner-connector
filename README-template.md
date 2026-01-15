@@ -109,9 +109,9 @@ table|String|The Table of the Cloud Spanner database that you are reading from
 enableDataboost|Boolean|Enable the [Data Boost](https://cloud.google.com/spanner/docs/databoost/databoost-overview), which provides independent compute resources to query Spanner with near-zero impact to existing workloads. Note the option may trigger [extra charge](https://cloud.google.com/spanner/pricing#spanner-data-boost-pricing).
 
 ### Writing to Spanner Tables (Preview)
-> Note: Write support is a preview feature.
+> Note: Write support is a preview feature. Only "append" save mode is supported.
 
-This is an example of using Python to write to a Spanner table.
+Here is an example of using Python to write to a Spanner table.
 ```python
 from pyspark.sql import SparkSession
 
@@ -130,7 +130,7 @@ df.write.format('cloud-spanner') \
    .save()
 ```
 
-Here are the options supported in the Spark Spanner connector for writing
+These are the options supported in the Spark Spanner connector for writing
 tables.
 
 Variable|Validation|Comments
@@ -140,6 +140,9 @@ instanceId|String|The instanceID of the Cloud Spanner database
 databaseId|String|The databaseID of the Cloud Spanner database
 table|String|The Table of the Cloud Spanner database that you are writing to
 batchSize|Long|The number of rows to send in a single batch. Default: 1000
+numWriteThreads|Integer|The number of threads to use for writing per Spark worker. This controls the parallelism of the write operation. Default: 8
+assumeIdempotentRows|Boolean|When `true`, the connector uses a higher-throughput 'at-least-once' write mode. See [Spanner documentation](https://docs.cloud.google.com/spanner/docs/batch-write) for use cases and limitations. Default: `false`
+maxPendingTransactions|Integer|The maximum number of concurrent batches that can be in-flight. This is used to control backpressure. Default: 20
 
 #### Data Types
 The connector supports writing the following Spark data types to Spanner.
@@ -168,7 +171,9 @@ Spark Data Type|Spanner PostgreSql Type
 `DateType`|`date`
 `DecimalType`|`numeric`/`decimal`
 
-> Note: `ArrayType`, and `StructType` are not currently supported.
+> Note: `ArrayType`, and `StructType` are not currently supported and pre-existing Google Spanner limitations apply. Specifically:
+> - Column value size is limited to 10MB,
+> - In GoogleSQL, `NUMERIC` type is limited to 9 digits of scale, Spark supports up to 38.
 
 
 
