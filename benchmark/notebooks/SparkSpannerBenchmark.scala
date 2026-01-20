@@ -21,37 +21,15 @@ dbutils.widgets.text("assumeIdempotentRows", "true", "Assume idempotent rows")
 dbutils.widgets.text("resultsBucket", "", "GCS Bucket for results")
 dbutils.widgets.text("buildSparkVersion", "3.3", "Spark version used for the connector")
 dbutils.widgets.text("numPartitions", (5 * 4 * 2).toString, "Number of partitions for the DataFrame")
+dbutils.widgets.text("sourceTable", "", "The name of the source Delta table to read from")
 
 println("Running Spark Spanner Connector Benchmark...")
-
-private val payloadSample =
-  """
-{
-  "data": [
-    {"id": 1, "value": "a_long_string_to_make_the_file_bigger_01"},
-    {"id": 2, "value": "a_long_string_to_make_the_file_bigger_02"},
-    {"id": 3, "value": "a_long_string_to_make_the_file_bigger_03"},
-    {"id": 4, "value": "a_long_string_to_make_the_file_bigger_04"},
-    {"id": 5, "value": "a_long_string_to_make_the_file_bigger_05"},
-    {"id": 6, "value": "a_long_string_to_make_the_file_bigger_06"},
-    {"id": 7, "value": "a_long_string_to_make_the_file_bigger_07"},
-    {"id": 8, "value": "a_long_string_to_make_the_file_bigger_08"},
-    {"id": 9, "value": "a_long_string_to_make_the_file_bigger_09"},
-    {"id": 10, "value": "a_long_string_to_make_the_file_bigger_10"},
-    {"id": 11, "value": "a_long_string_to_make_the_file_bigger_11"},
-    {"id": 12, "value": "a_long_string_to_make_the_file_bigger_12"},
-    {"id": 13, "value": "a_long_string_to_make_the_file_bigger_13"},
-    {"id": 14, "value": "a_long_string_to_make_the_file_bigger_14"},
-    {"id": 15, "value": "a_long_string_to_make_the_file_bigger_15"},
-    {"id": 16, "value": "a_long_string_to_make_the_file_bigger_16"}
-  ]
-}
-""".stripMargin
 
 val projectId = dbutils.widgets.get("projectId")
 val instanceId = dbutils.widgets.get("instanceId")
 val databaseId = dbutils.widgets.get("databaseId")
 val writeTable = dbutils.widgets.get("writeTable")
+val sourceTable = dbutils.widgets.get("sourceTable")
 val numRecords = dbutils.widgets.get("numRecords").toLong
 
 // Use get for widgets, then fallback to default if empty
@@ -75,26 +53,28 @@ println(s"projectId: $projectId")
 println(s"instanceId: $instanceId")
 println(s"databaseId: $databaseId")
 println(s"writeTable: $writeTable")
+println(s"sourceTable: $sourceTable")
 println(s"numRecords: $numRecords")
 println(s"numPartitions: $numPartitions")
 
+if (sourceTable.isEmpty) {
+  dbutils.notebook.exit("ERROR: sourceTable widget cannot be empty.")
+}
+
 import spark.implicits._
 
-val generateUUID = udf(() => UUID.randomUUID().toString)
+println(s"Reading from source table '$sourceTable'...")
+val dfSource = spark.read.table(sourceTable) // Renamed from dfWrite to dfSource for clarity
 
-println("Test: Writing data with new schema...")
+val sourceTableCount = dfSource.count() // Get the total count of the source table
 
-val dfWrite = spark
-  .range(numRecords)
-  .select(
-    coalesce(generateUUID(), lit("0")).as("id"),
-    lit(payloadSample).as("json_payload"),
-    lit("short_label_constant").as("short_label"),
-    lit(UUID.nameUUIDFromBytes("related_guid_constant".getBytes).toString).as("related_guid"),
-    lit("A").as("status_flag"),
-    current_timestamp().as("created_at"),
-    current_timestamp().as("updated_at")
-  )
+println(s"Source table '$sourceTable' has $sourceTableCount records.")
+
+if (numRecords > sourceTableCount) {
+  dbutils.notebook.exit(s"ERROR: Requested number of records ($numRecords) is greater than available records in source table ($sourceTableCount). Aborting benchmark.")
+}
+
+val dfWrite = dfSource.limit(numRecords.toInt) // Take only the requested number of records
 
 val averageRowSizeBytes = 1085L
 val sizeInBytes = averageRowSizeBytes * numRecords

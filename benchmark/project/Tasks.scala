@@ -20,9 +20,161 @@ object CustomTasks {
   lazy val refreshDatabricksToken = inputKey[Unit]("Refreshes the Databricks token.")
   lazy val spannerUp = inputKey[Unit]("Ensures spanner instance, database and table exist for benchmark.")
   lazy val spannerDown = inputKey[Unit]("Removes the spanner instance, and its databases, referenced in the benchmark config.")
+  lazy val prepareDatabricksSource = inputKey[Unit]("Creates a delta table with source data for the benchmark.")
 
   private def loadBenchmarkConfig(file: File): JsValue = {
     Json.parse(IO.read(file))
+  }
+
+  private def runDatabricksNotebookHelper(
+      configFile: File,
+      localNotebookPathKey: String,
+      baseDirectory: File
+  ): Unit = {
+    val config = loadBenchmarkConfig(configFile)
+
+    val databricksHost = (config \ "databricksHost").as[String]
+    val databricksToken = (config \ "databricksToken").as[String]
+    val clusterId = (config \ "clusterId").as[String]
+    val baseDatabricksNotebookPath = (config \ "notebookPath").as[String]
+    val localNotebookPath = (config \ localNotebookPathKey).as[String]
+    val notebookBasename = new java.io.File(localNotebookPath).getName
+    val notebookPath = s"${baseDatabricksNotebookPath.stripSuffix("/")}/$notebookBasename"
+    val ucVolumeBasePath = (config \ "ucVolumePath").as[String]
+    val ucVolumePath = s"${ucVolumeBasePath.stripSuffix("/")}/$clusterId"
+
+
+    // Find the connector JAR
+    val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
+    val connectorVersion = "0.0.1-SNAPSHOT" // from parent pom
+    val artifactId = s"spark-$sparkVersion-spanner"
+    val connectorJarName = s"$artifactId-$connectorVersion.jar"
+    val localJarPath = Path.userHome / ".m2" / "repository" / "com" / "google" / "cloud" / "spark" / "spanner" / artifactId / connectorVersion / connectorJarName
+
+    if (!localJarPath.exists()) {
+      sys.error(s"Connector JAR not found at $localJarPath. Please build and publish it to your local Maven repository first using 'mvn clean install -P$sparkVersion'.")
+    }
+
+    println(s"Using connector JAR: $localJarPath")
+
+    // 1. Prepare paths
+    val remoteJarPath = s"$ucVolumePath/${localJarPath.getName}"
+    val remoteJarDir = remoteJarPath.substring(0, remoteJarPath.lastIndexOf('/'))
+
+    // 2. Create remote directory
+    println(s"Ensuring directory exists: $remoteJarDir")
+    val mkdirsCommand = Seq("databricks", "fs", "mkdirs", remoteJarDir)
+    println(s"Executing command: ${mkdirsCommand.mkString(" ")}")
+    Process(mkdirsCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+
+    // 3. Upload JAR to UC Volume
+    println(s"Uploading $localJarPath to $remoteJarPath on Databricks...")
+    val uploadCommand = Seq(
+      "databricks", "fs", "cp", "--overwrite", localJarPath.toString, remoteJarPath
+    )
+    println(s"Executing command: ${uploadCommand.mkString(" ")}")
+    val uploadExitCode = Process(uploadCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+    if (uploadExitCode != 0) {
+      sys.error(s"Failed to upload JAR to Databricks UC Volume.")
+    }
+    println("JAR uploaded successfully to UC Volume.")
+
+    // 4. Install JAR on cluster
+    println(s"Installing JAR $remoteJarPath on cluster $clusterId")
+    val installJson = Json.obj(
+      "cluster_id" -> clusterId,
+      "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
+    )
+    val installJsonString = Json.stringify(installJson)
+    val installCommand = Seq("databricks", "libraries", "install", "--json", installJsonString)
+    println(s"Executing command: ${installCommand.mkString(" ")}")
+    val installExitCode = Process(installCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+    if (installExitCode != 0) {
+      sys.error("Failed to install JAR on cluster.")
+    }
+    println("JAR installed on cluster successfully.")
+
+    // 5. Import notebook
+    val language = localNotebookPath.substring(localNotebookPath.lastIndexOf('.') + 1).toUpperCase match {
+      case "PY" => "PYTHON"
+      case "SQL" => "SQL"
+      case "R" => "R"
+      case "SCALA" => "SCALA"
+      case other => sys.error(s"Unsupported notebook language extension: .$other")
+    }
+
+    println(s"Importing notebook $localNotebookPath to $notebookPath on Databricks...")
+    val importCommand = Seq(
+      "databricks", "workspace", "import", notebookPath,
+      "--file", (baseDirectory / localNotebookPath).toString(),
+      "--language", language,
+      "--format", "SOURCE",
+      "--overwrite"
+    )
+    println(s"Executing command: ${importCommand.mkString(" ")}")
+    val importExitCode = Process(importCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+    if (importExitCode != 0) {
+      sys.error(s"Failed to import notebook to Databricks.")
+    }
+    println("Notebook imported successfully.")
+
+    // 6. Prepare parameters
+    val databricksKeys = Set("databricksHost", "databricksToken", "clusterId", "notebookPath", "localNotebookPath", "localPrepareNotebookPath", "ucVolumePath")
+    val allParams = config.as[JsObject].value.filterKeys(k => !databricksKeys.contains(k))
+    val baseParameters = JsObject(
+      allParams.map { case (key, value) =>
+        key -> (value match {
+          case s: JsString => s
+          case other => Json.toJson(other.toString)
+        })
+      }.toSeq
+    )
+
+    // 7. Run notebook
+    val jobJson = Json.obj(
+      "run_name" -> "Spark Spanner Benchmark",
+      "tasks" -> Json.arr(
+        Json.obj(
+          "task_key" -> "benchmark_task",
+          "notebook_task" -> Json.obj(
+            "notebook_path" -> notebookPath,
+            "source" -> "WORKSPACE",
+            "base_parameters" -> baseParameters
+          ),
+          "existing_cluster_id" -> clusterId
+        )
+      )
+    )
+    val jobJsonString = Json.stringify(jobJson)
+
+    try {
+      println(s"Submitting job for notebook $notebookPath on cluster $clusterId...")
+      val runCommand = Seq(
+        "databricks", "jobs", "submit", "--json", jobJsonString
+      )
+      println(s"Executing command: databricks jobs submit --json '...'")
+      val runExitCode = Process(runCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+      if (runExitCode != 0) {
+        sys.error(s"Failed to submit job on Databricks.")
+      }
+      println("Job submitted successfully.")
+    } finally {
+      // 8. Uninstall JAR from cluster
+      println(s"Uninstalling JAR $remoteJarPath from cluster $clusterId")
+      val uninstallJson = Json.obj(
+        "cluster_id" -> clusterId,
+        "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
+      )
+      val uninstallJsonString = Json.stringify(uninstallJson)
+      val uninstallCommand = Seq("databricks", "libraries", "uninstall", "--json", uninstallJsonString)
+      println(s"Executing command: ${uninstallCommand.mkString(" ")}")
+      val uninstallExitCode = Process(uninstallCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+      if (uninstallExitCode != 0) {
+        println(s"Warning: Failed to uninstall JAR from cluster. You may need to do it manually.")
+      } else {
+        println("JAR uninstalled successfully.")
+      }
+    }
   }
 
   lazy val customTaskSettings: Seq[Setting[_]] = Seq(
@@ -184,150 +336,12 @@ object CustomTasks {
     runDatabricksNotebook := {
       val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
       val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
-      val config = loadBenchmarkConfig(configFile)
-
-      val databricksHost = (config \ "databricksHost").as[String]
-      val databricksToken = (config \ "databricksToken").as[String]
-      val clusterId = (config \ "clusterId").as[String]
-      val baseDatabricksNotebookPath = (config \ "notebookPath").as[String]
-      val localNotebookPath = (config \ "localNotebookPath").as[String]
-      val notebookBasename = new java.io.File(localNotebookPath).getName
-      val notebookPath = s"${baseDatabricksNotebookPath.stripSuffix("/")}/$notebookBasename"
-      val ucVolumeBasePath = (config \ "ucVolumePath").as[String]
-      val ucVolumePath = s"${ucVolumeBasePath.stripSuffix("/")}/$clusterId"
-
-
-      // Find the connector JAR
-      val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
-      val connectorVersion = "0.0.1-SNAPSHOT" // from parent pom
-      val artifactId = s"spark-$sparkVersion-spanner"
-      val connectorJarName = s"$artifactId-$connectorVersion.jar"
-      val localJarPath = Path.userHome / ".m2" / "repository" / "com" / "google" / "cloud" / "spark" / "spanner" / artifactId / connectorVersion / connectorJarName
-
-      if (!localJarPath.exists()) {
-        sys.error(s"Connector JAR not found at $localJarPath. Please build and publish it to your local Maven repository first using 'mvn clean install -P$sparkVersion'.")
-      }
-
-      println(s"Using connector JAR: $localJarPath")
-
-      // 1. Prepare paths
-      val remoteJarPath = s"$ucVolumePath/${localJarPath.getName}"
-      val remoteJarDir = remoteJarPath.substring(0, remoteJarPath.lastIndexOf('/'))
-
-      // 2. Create remote directory
-      println(s"Ensuring directory exists: $remoteJarDir")
-      val mkdirsCommand = Seq("databricks", "fs", "mkdirs", remoteJarDir)
-      println(s"Executing command: ${mkdirsCommand.mkString(" ")}")
-      Process(mkdirsCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-
-      // 3. Upload JAR to UC Volume
-      println(s"Uploading $localJarPath to $remoteJarPath on Databricks...")
-      val uploadCommand = Seq(
-        "databricks", "fs", "cp", "--overwrite", localJarPath.toString, remoteJarPath
-      )
-      println(s"Executing command: ${uploadCommand.mkString(" ")}")
-      val uploadExitCode = Process(uploadCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-      if (uploadExitCode != 0) {
-        sys.error(s"Failed to upload JAR to Databricks UC Volume.")
-      }
-      println("JAR uploaded successfully to UC Volume.")
-
-      // 4. Install JAR on cluster
-      println(s"Installing JAR $remoteJarPath on cluster $clusterId")
-      val installJson = Json.obj(
-        "cluster_id" -> clusterId,
-        "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
-      )
-      val installJsonString = Json.stringify(installJson)
-      val installCommand = Seq("databricks", "libraries", "install", "--json", installJsonString)
-      println(s"Executing command: ${installCommand.mkString(" ")}")
-      val installExitCode = Process(installCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-      if (installExitCode != 0) {
-        sys.error("Failed to install JAR on cluster.")
-      }
-      println("JAR installed on cluster successfully.")
-      
-      // 5. Import notebook
-      val language = localNotebookPath.substring(localNotebookPath.lastIndexOf('.') + 1).toUpperCase match {
-        case "PY" => "PYTHON"
-        case "SQL" => "SQL"
-        case "R" => "R"
-        case "SCALA" => "SCALA"
-        case other => sys.error(s"Unsupported notebook language extension: .$other")
-      }
-
-      println(s"Importing notebook $localNotebookPath to $notebookPath on Databricks...")
-      val importCommand = Seq(
-        "databricks", "workspace", "import", notebookPath,
-        "--file", (baseDirectory.value / localNotebookPath).toString(),
-        "--language", language,
-        "--format", "SOURCE",
-        "--overwrite"
-      )
-      println(s"Executing command: ${importCommand.mkString(" ")}")
-      val importExitCode = Process(importCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-      if (importExitCode != 0) {
-        sys.error(s"Failed to import notebook to Databricks.")
-      }
-      println("Notebook imported successfully.")
-
-      // 6. Prepare parameters
-      val databricksKeys = Set("databricksHost", "databricksToken", "clusterId", "notebookPath", "localNotebookPath", "ucVolumePath")
-      val allParams = config.as[JsObject].value.filterKeys(k => !databricksKeys.contains(k))
-      val baseParameters = JsObject(
-        allParams.map { case (key, value) =>
-          key -> (value match {
-            case s: JsString => s
-            case other => Json.toJson(other.toString)
-          })
-        }.toSeq
-      )
-
-      // 7. Run notebook
-      val jobJson = Json.obj(
-        "run_name" -> "Spark Spanner Benchmark",
-        "tasks" -> Json.arr(
-          Json.obj(
-            "task_key" -> "benchmark_task",
-            "notebook_task" -> Json.obj(
-              "notebook_path" -> notebookPath,
-              "source" -> "WORKSPACE",
-              "base_parameters" -> baseParameters
-            ),
-            "existing_cluster_id" -> clusterId
-          )
-        )
-      )
-      val jobJsonString = Json.stringify(jobJson)
-
-      try {
-        println(s"Submitting job for notebook $notebookPath on cluster $clusterId...")
-        val runCommand = Seq(
-          "databricks", "jobs", "submit", "--json", jobJsonString
-        )
-        println(s"Executing command: databricks jobs submit --json '...'")
-        val runExitCode = Process(runCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-        if (runExitCode != 0) {
-          sys.error(s"Failed to submit job on Databricks.")
-        }
-        println("Job submitted successfully.")
-      } finally {
-        // 8. Uninstall JAR from cluster
-        println(s"Uninstalling JAR $remoteJarPath from cluster $clusterId")
-        val uninstallJson = Json.obj(
-          "cluster_id" -> clusterId,
-          "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
-        )
-        val uninstallJsonString = Json.stringify(uninstallJson)
-        val uninstallCommand = Seq("databricks", "libraries", "uninstall", "--json", uninstallJsonString)
-        println(s"Executing command: ${uninstallCommand.mkString(" ")}")
-        val uninstallExitCode = Process(uninstallCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-        if (uninstallExitCode != 0) {
-          println(s"Warning: Failed to uninstall JAR from cluster. You may need to do it manually.")
-        } else {
-          println("JAR uninstalled successfully.")
-        }
-      }
+      runDatabricksNotebookHelper(configFile, "localNotebookPath", baseDirectory.value)
+    },
+    prepareDatabricksSource := {
+      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
+      runDatabricksNotebookHelper(configFile, "localPrepareNotebookPath", baseDirectory.value)
     },
 
     refreshDatabricksToken := {
