@@ -45,7 +45,8 @@ lazy val root = (project in file("."))
 
     Compile / mainClass := Some("com.google.cloud.spark.spanner.SparkSpannerWriteBenchmark"),
     spannerUp := (CustomTasks.spannerUp.evaluated),
-    spannerDown := (CustomTasks.spannerDown.evaluated)
+    spannerDown := (CustomTasks.spannerDown.evaluated),
+    prepareDatabricksSource := (CustomTasks.prepareDatabricksSource.evaluated)
   )
   .settings(CustomTasks.customTaskSettings)
 
