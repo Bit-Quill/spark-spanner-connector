@@ -43,7 +43,9 @@ lazy val root = (project in file("."))
         MergeStrategy.first
     },
 
-    Compile / mainClass := Some("com.google.cloud.spark.spanner.SparkSpannerWriteBenchmark")
+    Compile / mainClass := Some("com.google.cloud.spark.spanner.SparkSpannerWriteBenchmark"),
+    spannerUp := (CustomTasks.spannerUp.evaluated),
+    spannerDown := (CustomTasks.spannerDown.evaluated)
   )
   .settings(CustomTasks.customTaskSettings)
 

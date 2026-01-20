@@ -18,12 +18,169 @@ object CustomTasks {
   lazy val addJarToAllowlist = inputKey[Unit]("Adds a JAR path prefix to the Databricks artifact allowlist.")
   lazy val removeJarFromAllowlist = inputKey[Unit]("Removes a JAR path prefix from the Databricks artifact allowlist.")
   lazy val refreshDatabricksToken = inputKey[Unit]("Refreshes the Databricks token.")
+  lazy val spannerUp = inputKey[Unit]("Ensures spanner instance, database and table exist for benchmark.")
+  lazy val spannerDown = inputKey[Unit]("Removes the spanner instance, and its databases, referenced in the benchmark config.")
 
   private def loadBenchmarkConfig(file: File): JsValue = {
     Json.parse(IO.read(file))
   }
 
   lazy val customTaskSettings: Seq[Setting[_]] = Seq(
+    spannerDown := {
+      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
+      val config = loadBenchmarkConfig(configFile)
+
+      val instanceId = (config \ "instanceId").as[String]
+      val projectId = (config \ "projectId").as[String]
+
+      println(s"Attempting to tear down Spanner instance '$instanceId' in project '$projectId'...")
+
+      // 1. Check if instance exists
+      val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
+      if (checkInstanceCommand.! != 0) {
+        println(s"Spanner instance '$instanceId' does not exist or you don't have permissions. Nothing to delete.")
+      } else {
+        // 2. List and delete databases within the instance
+        println(s"Listing databases in instance '$instanceId'...")
+        val listDatabasesCommand = Seq(
+          "gcloud", "spanner", "databases", "list",
+          s"--instance=$instanceId",
+          s"--project=$projectId",
+          "--format=json"
+        )
+        val databasesJson = Process(listDatabasesCommand).!!.trim
+        val databases = Json.parse(databasesJson).as[JsArray]
+
+        if (databases.value.isEmpty) {
+          println(s"No databases found in instance '$instanceId'.")
+        } else {
+          databases.value.foreach { db =>
+            val databaseId = (db \ "name").as[String].split("/").last
+            println(s"Deleting database '$databaseId' from instance '$instanceId'...")
+            val deleteDbCommand = Seq(
+              "gcloud", "spanner", "databases", "delete", databaseId,
+              s"--instance=$instanceId",
+              s"--project=$projectId",
+              "--quiet"
+            )
+            println(s"Running command: ${deleteDbCommand.mkString(" ")}")
+            if (deleteDbCommand.! != 0) {
+              println(s"Warning: Failed to delete database '$databaseId'. It might be already gone or permissions issue.")
+            } else {
+              println(s"Successfully initiated deletion of database '$databaseId'.")
+            }
+          }
+        }
+
+        // 3. Delete the Spanner instance
+        println(s"Deleting Spanner instance '$instanceId'...")
+        val deleteInstanceCommand = Seq(
+          "gcloud", "spanner", "instances", "delete", instanceId,
+          s"--project=$projectId",
+          "--quiet"
+        )
+        println(s"Running command: ${deleteInstanceCommand.mkString(" ")}")
+        if (deleteInstanceCommand.! != 0) {
+          sys.error(s"Failed to delete Spanner instance '$instanceId'.")
+        } else {
+          println(s"Successfully initiated deletion of Spanner instance '$instanceId'.")
+        }
+      }
+    },
+    spannerUp := {
+      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
+      val config = loadBenchmarkConfig(configFile)
+
+      val instanceId = (config \ "instanceId").as[String]
+      val projectId = (config \ "projectId").as[String]
+      val databaseId = (config \ "databaseId").as[String]
+
+      // 1. Ensure Spanner instance exists.
+      println(s"Checking for Spanner instance '$instanceId'...")
+      val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
+      if (checkInstanceCommand.! != 0) {
+        println(s"Spanner instance '$instanceId' not found, creating it...")
+        val spannerRegion = (config \ "spannerRegion").asOpt[String].getOrElse("us-central1")
+        val createInstanceCommand = Seq(
+          "gcloud", "spanner", "instances", "create", instanceId,
+          s"--project=$projectId",
+          s"--config=regional-$spannerRegion",
+          s"--description=$instanceId",
+          s"--autoscaling-min-processing-units=2000",
+          s"--autoscaling-max-processing-units=20000",
+          s"--autoscaling-high-priority-cpu-target=65",
+          s"--autoscaling-storage-target=90",
+          s"--edition=ENTERPRISE"
+        )
+        println(s"Running command: ${createInstanceCommand.mkString(" ")}")
+        if (createInstanceCommand.! != 0) {
+          sys.error(s"Failed to create Spanner instance '$instanceId'.")
+        }
+        println(s"Successfully initiated creation of Spanner instance '$instanceId'.")
+      } else {
+        println(s"Spanner instance '$instanceId' already exists.")
+      }
+
+      // 2. Ensure Spanner database exists.
+      println(s"Checking for Spanner database '$databaseId' in instance '$instanceId'...")
+      val checkDbCommand = Seq("gcloud", "spanner", "databases", "describe", databaseId, s"--instance=$instanceId", s"--project=$projectId")
+      if (checkDbCommand.! != 0) {
+        println(s"Spanner database '$databaseId' not found, creating it...")
+        val createDbCommand = Seq(
+          "gcloud", "spanner", "databases", "create", databaseId,
+          s"--instance=$instanceId",
+          s"--project=$projectId"
+        )
+        println(s"Running command: ${createDbCommand.mkString(" ")}")
+        if (createDbCommand.! != 0) {
+          sys.error(s"Failed to create Spanner database '$databaseId' in instance '$instanceId'.")
+        }
+        println(s"Successfully initiated creation of Spanner database '$databaseId'.")
+      } else {
+        println(s"Spanner database '$databaseId' already exists.")
+      }
+
+      // 3. Ensure Spanner table exists.
+      val tableName = (config \ "writeTable").as[String]
+      println(s"Checking for Spanner table '$tableName' in database '$databaseId'...")
+      val checkTableCommand = Seq(
+        "gcloud", "spanner", "databases", "ddl", "describe", databaseId,
+        s"--instance=$instanceId",
+        s"--project=$projectId"
+      )
+      val ddlOutput = checkTableCommand.!!
+      if (ddlOutput.contains(s"CREATE TABLE $tableName")) {
+        println(s"Table '$tableName' already exists in database '$databaseId'.")
+      } else {
+        println(s"Table '$tableName' not found, creating it...")
+        val ddlFile = (config \ "ddlFile").asOpt[String]
+          .map(f => baseDirectory.value / f)
+          .getOrElse(baseDirectory.value / "ddl" / "create_test_table.sql")
+
+        if (!ddlFile.exists()) {
+          sys.error(s"DDL file not found at ${ddlFile.getAbsolutePath}")
+        }
+
+        val ddlContent = IO.read(ddlFile).replace("TransferTest", tableName)
+        val createTableCommand = Seq(
+          "gcloud", "spanner", "databases", "ddl", "update", databaseId,
+          s"--instance=$instanceId",
+          s"--project=$projectId",
+          s"--ddl=$ddlContent"
+        )
+        
+        println(s"Executing DDL to create table '$tableName' in database '$databaseId':")
+        println(ddlContent)
+        
+        if (createTableCommand.! != 0) {
+          sys.error(s"Failed to create table '$tableName'.")
+        } else {
+          println(s"Successfully created table '$tableName'.")
+        }
+      }
+    },
     runDatabricksNotebook := {
       val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
       val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
