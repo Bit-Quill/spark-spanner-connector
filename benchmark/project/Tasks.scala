@@ -21,6 +21,8 @@ object CustomTasks {
   lazy val spannerUp = inputKey[Unit]("Ensures spanner instance, database and table exist for benchmark.")
   lazy val spannerDown = inputKey[Unit]("Removes the spanner instance, and its databases, referenced in the benchmark config.")
   lazy val prepareDatabricksSource = inputKey[Unit]("Creates a delta table with source data for the benchmark.")
+  lazy val databricksInstallJar = inputKey[Unit]("Uploads and installs the connector JAR on Databricks.")
+  lazy val databricksUninstallJar = inputKey[Unit]("Uninstalls the connector JAR from Databricks.")
 
   private def loadBenchmarkConfig(file: File): JsValue = {
     Json.parse(IO.read(file))
@@ -40,61 +42,8 @@ object CustomTasks {
     val localNotebookPath = (config \ localNotebookPathKey).as[String]
     val notebookBasename = new java.io.File(localNotebookPath).getName
     val notebookPath = s"${baseDatabricksNotebookPath.stripSuffix("/")}/$notebookBasename"
-    val ucVolumeBasePath = (config \ "ucVolumePath").as[String]
-    val ucVolumePath = s"${ucVolumeBasePath.stripSuffix("/")}/$clusterId"
 
-
-    // Find the connector JAR
-    val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
-    val connectorVersion = "0.0.1-SNAPSHOT" // from parent pom
-    val artifactId = s"spark-$sparkVersion-spanner"
-    val connectorJarName = s"$artifactId-$connectorVersion.jar"
-    val localJarPath = Path.userHome / ".m2" / "repository" / "com" / "google" / "cloud" / "spark" / "spanner" / artifactId / connectorVersion / connectorJarName
-
-    if (!localJarPath.exists()) {
-      sys.error(s"Connector JAR not found at $localJarPath. Please build and publish it to your local Maven repository first using 'mvn clean install -P$sparkVersion'.")
-    }
-
-    println(s"Using connector JAR: $localJarPath")
-
-    // 1. Prepare paths
-    val remoteJarPath = s"$ucVolumePath/${localJarPath.getName}"
-    val remoteJarDir = remoteJarPath.substring(0, remoteJarPath.lastIndexOf('/'))
-
-    // 2. Create remote directory
-    println(s"Ensuring directory exists: $remoteJarDir")
-    val mkdirsCommand = Seq("databricks", "fs", "mkdirs", remoteJarDir)
-    println(s"Executing command: ${mkdirsCommand.mkString(" ")}")
-    Process(mkdirsCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-
-    // 3. Upload JAR to UC Volume
-    println(s"Uploading $localJarPath to $remoteJarPath on Databricks...")
-    val uploadCommand = Seq(
-      "databricks", "fs", "cp", "--overwrite", localJarPath.toString, remoteJarPath
-    )
-    println(s"Executing command: ${uploadCommand.mkString(" ")}")
-    val uploadExitCode = Process(uploadCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-    if (uploadExitCode != 0) {
-      sys.error(s"Failed to upload JAR to Databricks UC Volume.")
-    }
-    println("JAR uploaded successfully to UC Volume.")
-
-    // 4. Install JAR on cluster
-    println(s"Installing JAR $remoteJarPath on cluster $clusterId")
-    val installJson = Json.obj(
-      "cluster_id" -> clusterId,
-      "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
-    )
-    val installJsonString = Json.stringify(installJson)
-    val installCommand = Seq("databricks", "libraries", "install", "--json", installJsonString)
-    println(s"Executing command: ${installCommand.mkString(" ")}")
-    val installExitCode = Process(installCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-    if (installExitCode != 0) {
-      sys.error("Failed to install JAR on cluster.")
-    }
-    println("JAR installed on cluster successfully.")
-
-    // 5. Import notebook
+    // 1. Import notebook
     val language = localNotebookPath.substring(localNotebookPath.lastIndexOf('.') + 1).toUpperCase match {
       case "PY" => "PYTHON"
       case "SQL" => "SQL"
@@ -118,7 +67,7 @@ object CustomTasks {
     }
     println("Notebook imported successfully.")
 
-    // 6. Prepare parameters
+    // 2. Prepare parameters
     val databricksKeys = Set("databricksHost", "databricksToken", "clusterId", "notebookPath", "localNotebookPath", "localPrepareNotebookPath", "ucVolumePath")
     val allParams = config.as[JsObject].value.filterKeys(k => !databricksKeys.contains(k))
     val baseParameters = JsObject(
@@ -130,7 +79,7 @@ object CustomTasks {
       }.toSeq
     )
 
-    // 7. Run notebook
+    // 3. Run notebook
     val jobJson = Json.obj(
       "run_name" -> "Spark Spanner Benchmark",
       "tasks" -> Json.arr(
@@ -147,192 +96,272 @@ object CustomTasks {
     )
     val jobJsonString = Json.stringify(jobJson)
 
-    try {
       println(s"Submitting job for notebook $notebookPath on cluster $clusterId...")
       val runCommand = Seq(
         "databricks", "jobs", "submit", "--json", jobJsonString
       )
-      println(s"Executing command: databricks jobs submit --json '...'")
-      val runExitCode = Process(runCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-      if (runExitCode != 0) {
-        sys.error(s"Failed to submit job on Databricks.")
-      }
-      println("Job submitted successfully.")
-    } finally {
-      // 8. Uninstall JAR from cluster
-      println(s"Uninstalling JAR $remoteJarPath from cluster $clusterId")
-      val uninstallJson = Json.obj(
-        "cluster_id" -> clusterId,
-        "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
-      )
-      val uninstallJsonString = Json.stringify(uninstallJson)
-      val uninstallCommand = Seq("databricks", "libraries", "uninstall", "--json", uninstallJsonString)
-      println(s"Executing command: ${uninstallCommand.mkString(" ")}")
-      val uninstallExitCode = Process(uninstallCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
-      if (uninstallExitCode != 0) {
-        println(s"Warning: Failed to uninstall JAR from cluster. You may need to do it manually.")
-      } else {
-        println("JAR uninstalled successfully.")
-      }
+      println(s"Executing command: databricks jobs submit --json '...' and capturing output.")
+      
+      // Capture the output of the command
+      val output = Process(runCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!!.trim
+      
+      // Parse the JSON output
+      val resultJson = Json.parse(output)
+      val runId = (resultJson \ "run_id").as[Long]
+      val runPageUrl = (resultJson \ "run_page_url").as[String]
+      
+      println(s"Job submitted successfully. Run ID: $runId")
+      println(s"Monitor progress at: $runPageUrl")
     }
-  }
-
-  lazy val customTaskSettings: Seq[Setting[_]] = Seq(
-    spannerDown := {
-      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
-      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
-      val config = loadBenchmarkConfig(configFile)
-
-      val instanceId = (config \ "instanceId").as[String]
-      val projectId = (config \ "projectId").as[String]
-
-      println(s"Attempting to tear down Spanner instance '$instanceId' in project '$projectId'...")
-
-      // 1. Check if instance exists
-      val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
-      if (checkInstanceCommand.! != 0) {
-        println(s"Spanner instance '$instanceId' does not exist or you don't have permissions. Nothing to delete.")
-      } else {
-        // 2. List and delete databases within the instance
-        println(s"Listing databases in instance '$instanceId'...")
-        val listDatabasesCommand = Seq(
-          "gcloud", "spanner", "databases", "list",
-          s"--instance=$instanceId",
-          s"--project=$projectId",
-          "--format=json"
+  
+    lazy val customTaskSettings: Seq[Setting[_]] = Seq(
+      databricksInstallJar := {
+        val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+        val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
+        val config = loadBenchmarkConfig(configFile)
+        val databricksHost = (config \ "databricksHost").as[String]
+        val databricksToken = (config \ "databricksToken").as[String]
+        val clusterId = (config \ "clusterId").as[String]
+        val ucVolumeBasePath = (config \ "ucVolumePath").as[String]
+        val ucVolumePath = s"${ucVolumeBasePath.stripSuffix("/")}/$clusterId"
+  
+        // Find the connector JAR
+        val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
+        val connectorVersion = "0.0.1-SNAPSHOT" // from parent pom
+        val artifactId = s"spark-$sparkVersion-spanner"
+        val connectorJarName = s"$artifactId-$connectorVersion.jar"
+        val localJarPath = Path.userHome / ".m2" / "repository" / "com" / "google" / "cloud" / "spark" / "spanner" / artifactId / connectorVersion / connectorJarName
+  
+        if (!localJarPath.exists()) {
+          sys.error(s"Connector JAR not found at $localJarPath. Please build and publish it to your local Maven repository first using 'mvn clean install -P$sparkVersion'.")
+        }
+  
+        println(s"Using connector JAR: $localJarPath")
+  
+        // 1. Prepare paths
+        val remoteJarPath = s"$ucVolumePath/${localJarPath.getName}"
+        val remoteJarDir = remoteJarPath.substring(0, remoteJarPath.lastIndexOf('/'))
+  
+        // 2. Create remote directory
+        println(s"Ensuring directory exists: $remoteJarDir")
+        val mkdirsCommand = Seq("databricks", "fs", "mkdirs", remoteJarDir)
+        println(s"Executing command: ${mkdirsCommand.mkString(" ")}")
+        Process(mkdirsCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+  
+        // 3. Upload JAR to UC Volume
+        println(s"Uploading $localJarPath to $remoteJarPath on Databricks...")
+        val uploadCommand = Seq(
+          "databricks", "fs", "cp", "--overwrite", localJarPath.toString, remoteJarPath
         )
-        val databasesJson = Process(listDatabasesCommand).!!.trim
-        val databases = Json.parse(databasesJson).as[JsArray]
-
-        if (databases.value.isEmpty) {
-          println(s"No databases found in instance '$instanceId'.")
+        println(s"Executing command: ${uploadCommand.mkString(" ")}")
+        val uploadExitCode = Process(uploadCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+        if (uploadExitCode != 0) {
+          sys.error(s"Failed to upload JAR to Databricks UC Volume.")
+        }
+        println("JAR uploaded successfully to UC Volume.")
+  
+        // 4. Install JAR on cluster
+        println(s"Installing JAR $remoteJarPath on cluster $clusterId")
+        val installJson = Json.obj(
+          "cluster_id" -> clusterId,
+          "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
+        )
+        val installJsonString = Json.stringify(installJson)
+        val installCommand = Seq("databricks", "libraries", "install", "--json", installJsonString)
+        println(s"Executing command: ${installCommand.mkString(" ")}")
+        val installExitCode = Process(installCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+        if (installExitCode != 0) {
+          sys.error("Failed to install JAR on cluster.")
+        }
+        println("JAR installed on cluster successfully.")
+      },
+      databricksUninstallJar := {
+        val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+        val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
+        val config = loadBenchmarkConfig(configFile)
+        val databricksHost = (config \ "databricksHost").as[String]
+        val databricksToken = (config \ "databricksToken").as[String]
+        val clusterId = (config \ "clusterId").as[String]
+        val ucVolumeBasePath = (config \ "ucVolumePath").as[String]
+        val ucVolumePath = s"${ucVolumeBasePath.stripSuffix("/")}/$clusterId"
+        
+        // Construct remote JAR path
+        val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
+        val connectorVersion = "0.0.1-SNAPSHOT"
+        val artifactId = s"spark-$sparkVersion-spanner"
+        val connectorJarName = s"$artifactId-$connectorVersion.jar"
+        val remoteJarPath = s"$ucVolumePath/$connectorJarName"
+  
+        println(s"Uninstalling JAR $remoteJarPath from cluster $clusterId")
+        val uninstallJson = Json.obj(
+          "cluster_id" -> clusterId,
+          "libraries" -> Json.arr(Json.obj("jar" -> remoteJarPath))
+        )
+        val uninstallJsonString = Json.stringify(uninstallJson)
+        val uninstallCommand = Seq("databricks", "libraries", "uninstall", "--json", uninstallJsonString)
+        println(s"Executing command: ${uninstallCommand.mkString(" ")}")
+        val uninstallExitCode = Process(uninstallCommand, None, "DATABRICKS_HOST" -> databricksHost, "DATABRICKS_TOKEN" -> databricksToken).!
+        if (uninstallExitCode != 0) {
+          println(s"Warning: Failed to uninstall JAR from cluster. You may need to do it manually.")
         } else {
-          databases.value.foreach { db =>
-            val databaseId = (db \ "name").as[String].split("/").last
-            println(s"Deleting database '$databaseId' from instance '$instanceId'...")
-            val deleteDbCommand = Seq(
-              "gcloud", "spanner", "databases", "delete", databaseId,
-              s"--instance=$instanceId",
-              s"--project=$projectId",
-              "--quiet"
-            )
-            println(s"Running command: ${deleteDbCommand.mkString(" ")}")
-            if (deleteDbCommand.! != 0) {
-              println(s"Warning: Failed to delete database '$databaseId'. It might be already gone or permissions issue.")
-            } else {
-              println(s"Successfully initiated deletion of database '$databaseId'.")
+          println("JAR uninstalled successfully.")
+        }
+      },
+      spannerDown := {
+        val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+        val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
+        val config = loadBenchmarkConfig(configFile)
+  
+        val instanceId = (config \ "instanceId").as[String]
+        val projectId = (config \ "projectId").as[String]
+  
+        println(s"Attempting to tear down Spanner instance '$instanceId' in project '$projectId'...")
+  
+        // 1. Check if instance exists
+        val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
+        if (checkInstanceCommand.! != 0) {
+          println(s"Spanner instance '$instanceId' does not exist or you don't have permissions. Nothing to delete.")
+        } else {
+          // 2. List and delete databases within the instance
+          println(s"Listing databases in instance '$instanceId'...")
+          val listDatabasesCommand = Seq(
+            "gcloud", "spanner", "databases", "list",
+            s"--instance=$instanceId",
+            s"--project=$projectId",
+            "--format=json"
+          )
+          val databasesJson = Process(listDatabasesCommand).!!.trim
+          val databases = Json.parse(databasesJson).as[JsArray]
+  
+          if (databases.value.isEmpty) {
+            println(s"No databases found in instance '$instanceId'.")
+          } else {
+            databases.value.foreach { db =>
+              val databaseId = (db \ "name").as[String].split("/").last
+              println(s"Deleting database '$databaseId' from instance '$instanceId'...")
+              val deleteDbCommand = Seq(
+                "gcloud", "spanner", "databases", "delete", databaseId,
+                s"--instance=$instanceId",
+                s"--project=$projectId",
+                "--quiet"
+              )
+              println(s"Running command: ${deleteDbCommand.mkString(" ")}")
+              if (deleteDbCommand.! != 0) {
+                println(s"Warning: Failed to delete database '$databaseId'. It might be already gone or permissions issue.")
+              } else {
+                println(s"Successfully initiated deletion of database '$databaseId'.")
+              }
             }
           }
+  
+          // 3. Delete the Spanner instance
+          println(s"Deleting Spanner instance '$instanceId'...")
+          val deleteInstanceCommand = Seq(
+            "gcloud", "spanner", "instances", "delete", instanceId,
+            s"--project=$projectId",
+            "--quiet"
+          )
+          println(s"Running command: ${deleteInstanceCommand.mkString(" ")}")
+          if (deleteInstanceCommand.! != 0) {
+            sys.error(s"Failed to delete Spanner instance '$instanceId'.")
+          } else {
+            println(s"Successfully initiated deletion of Spanner instance '$instanceId'.")
+          }
         }
+      },
+      spannerUp := {
+        val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
+        val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
+        val config = loadBenchmarkConfig(configFile)
 
-        // 3. Delete the Spanner instance
-        println(s"Deleting Spanner instance '$instanceId'...")
-        val deleteInstanceCommand = Seq(
-          "gcloud", "spanner", "instances", "delete", instanceId,
-          s"--project=$projectId",
-          "--quiet"
-        )
-        println(s"Running command: ${deleteInstanceCommand.mkString(" ")}")
-        if (deleteInstanceCommand.! != 0) {
-          sys.error(s"Failed to delete Spanner instance '$instanceId'.")
+        val instanceId = (config \ "instanceId").as[String]
+        val projectId = (config \ "projectId").as[String]
+        val databaseId = (config \ "databaseId").as[String]
+
+        // 1. Ensure Spanner instance exists.
+        println(s"Checking for Spanner instance '$instanceId'...")
+        val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
+        if (checkInstanceCommand.! != 0) {
+          println(s"Spanner instance '$instanceId' not found, creating it...")
+          val spannerRegion = (config \ "spannerRegion").asOpt[String].getOrElse("us-central1")
+          val createInstanceCommand = Seq(
+            "gcloud", "spanner", "instances", "create", instanceId,
+            s"--project=$projectId",
+            s"--config=regional-$spannerRegion",
+            s"--description=$instanceId",
+            s"--autoscaling-min-processing-units=2000",
+            s"--autoscaling-max-processing-units=20000",
+            s"--autoscaling-high-priority-cpu-target=65",
+            s"--autoscaling-storage-target=90",
+            s"--edition=ENTERPRISE"
+          )
+          println(s"Running command: ${createInstanceCommand.mkString(" ")}")
+          if (createInstanceCommand.! != 0) {
+            sys.error(s"Failed to create Spanner instance '$instanceId'.")
+          }
+          println(s"Successfully initiated creation of Spanner instance '$instanceId'.")
         } else {
-          println(s"Successfully initiated deletion of Spanner instance '$instanceId'.")
+          println(s"Spanner instance '$instanceId' already exists.")
         }
-      }
-    },
-    spannerUp := {
-      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
-      val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmark.json")
-      val config = loadBenchmarkConfig(configFile)
 
-      val instanceId = (config \ "instanceId").as[String]
-      val projectId = (config \ "projectId").as[String]
-      val databaseId = (config \ "databaseId").as[String]
-
-      // 1. Ensure Spanner instance exists.
-      println(s"Checking for Spanner instance '$instanceId'...")
-      val checkInstanceCommand = Seq("gcloud", "spanner", "instances", "describe", instanceId, s"--project=$projectId")
-      if (checkInstanceCommand.! != 0) {
-        println(s"Spanner instance '$instanceId' not found, creating it...")
-        val spannerRegion = (config \ "spannerRegion").asOpt[String].getOrElse("us-central1")
-        val createInstanceCommand = Seq(
-          "gcloud", "spanner", "instances", "create", instanceId,
-          s"--project=$projectId",
-          s"--config=regional-$spannerRegion",
-          s"--description=$instanceId",
-          s"--autoscaling-min-processing-units=2000",
-          s"--autoscaling-max-processing-units=20000",
-          s"--autoscaling-high-priority-cpu-target=65",
-          s"--autoscaling-storage-target=90",
-          s"--edition=ENTERPRISE"
-        )
-        println(s"Running command: ${createInstanceCommand.mkString(" ")}")
-        if (createInstanceCommand.! != 0) {
-          sys.error(s"Failed to create Spanner instance '$instanceId'.")
+        // 2. Ensure Spanner database exists.
+        println(s"Checking for Spanner database '$databaseId' in instance '$instanceId'...")
+        val checkDbCommand = Seq("gcloud", "spanner", "databases", "describe", databaseId, s"--instance=$instanceId", s"--project=$projectId")
+        if (checkDbCommand.! != 0) {
+          println(s"Spanner database '$databaseId' not found, creating it...")
+          val createDbCommand = Seq(
+            "gcloud", "spanner", "databases", "create", databaseId,
+            s"--instance=$instanceId",
+            s"--project=$projectId"
+          )
+          println(s"Running command: ${createDbCommand.mkString(" ")}")
+          if (createDbCommand.! != 0) {
+            sys.error(s"Failed to create Spanner database '$databaseId' in instance '$instanceId'.")
+          }
+          println(s"Successfully initiated creation of Spanner database '$databaseId'.")
+        } else {
+          println(s"Spanner database '$databaseId' already exists.")
         }
-        println(s"Successfully initiated creation of Spanner instance '$instanceId'.")
-      } else {
-        println(s"Spanner instance '$instanceId' already exists.")
-      }
 
-      // 2. Ensure Spanner database exists.
-      println(s"Checking for Spanner database '$databaseId' in instance '$instanceId'...")
-      val checkDbCommand = Seq("gcloud", "spanner", "databases", "describe", databaseId, s"--instance=$instanceId", s"--project=$projectId")
-      if (checkDbCommand.! != 0) {
-        println(s"Spanner database '$databaseId' not found, creating it...")
-        val createDbCommand = Seq(
-          "gcloud", "spanner", "databases", "create", databaseId,
+        // 3. Ensure Spanner table exists.
+        val tableName = (config \ "writeTable").as[String]
+        println(s"Checking for Spanner table '$tableName' in database '$databaseId'...")
+        val checkTableCommand = Seq(
+          "gcloud", "spanner", "databases", "ddl", "describe", databaseId,
           s"--instance=$instanceId",
           s"--project=$projectId"
         )
-        println(s"Running command: ${createDbCommand.mkString(" ")}")
-        if (createDbCommand.! != 0) {
-          sys.error(s"Failed to create Spanner database '$databaseId' in instance '$instanceId'.")
-        }
-        println(s"Successfully initiated creation of Spanner database '$databaseId'.")
-      } else {
-        println(s"Spanner database '$databaseId' already exists.")
-      }
-
-      // 3. Ensure Spanner table exists.
-      val tableName = (config \ "writeTable").as[String]
-      println(s"Checking for Spanner table '$tableName' in database '$databaseId'...")
-      val checkTableCommand = Seq(
-        "gcloud", "spanner", "databases", "ddl", "describe", databaseId,
-        s"--instance=$instanceId",
-        s"--project=$projectId"
-      )
-      val ddlOutput = checkTableCommand.!!
-      if (ddlOutput.contains(s"CREATE TABLE $tableName")) {
-        println(s"Table '$tableName' already exists in database '$databaseId'.")
-      } else {
-        println(s"Table '$tableName' not found, creating it...")
-        val ddlFile = (config \ "ddlFile").asOpt[String]
-          .map(f => baseDirectory.value / f)
-          .getOrElse(baseDirectory.value / "ddl" / "create_test_table.sql")
-
-        if (!ddlFile.exists()) {
-          sys.error(s"DDL file not found at ${ddlFile.getAbsolutePath}")
-        }
-
-        val ddlContent = IO.read(ddlFile).replace("TransferTest", tableName)
-        val createTableCommand = Seq(
-          "gcloud", "spanner", "databases", "ddl", "update", databaseId,
-          s"--instance=$instanceId",
-          s"--project=$projectId",
-          s"--ddl=$ddlContent"
-        )
-        
-        println(s"Executing DDL to create table '$tableName' in database '$databaseId':")
-        println(ddlContent)
-        
-        if (createTableCommand.! != 0) {
-          sys.error(s"Failed to create table '$tableName'.")
+        val ddlOutput = checkTableCommand.!!
+        if (ddlOutput.contains(s"CREATE TABLE $tableName")) {
+          println(s"Table '$tableName' already exists in database '$databaseId'.")
         } else {
-          println(s"Successfully created table '$tableName'.")
+          println(s"Table '$tableName' not found, creating it...")
+          val ddlFile = (config \ "ddlFile").asOpt[String]
+            .map(f => baseDirectory.value / f)
+            .getOrElse(baseDirectory.value / "ddl" / "create_test_table.sql")
+
+          if (!ddlFile.exists()) {
+            sys.error(s"DDL file not found at ${ddlFile.getAbsolutePath}")
+          }
+
+          val ddlContent = IO.read(ddlFile).replace("TransferTest", tableName)
+          val createTableCommand = Seq(
+            "gcloud", "spanner", "databases", "ddl", "update", databaseId,
+            s"--instance=$instanceId",
+            s"--project=$projectId",
+            s"--ddl=$ddlContent"
+          )
+
+          println(s"Executing DDL to create table '$tableName' in database '$databaseId':")
+          println(ddlContent)
+
+          if (createTableCommand.! != 0) {
+            sys.error(s"Failed to create table '$tableName'.")
+          } else {
+            println(s"Successfully created table '$tableName'.")
+          }
         }
-      }
-    },
+      },
     runDatabricksNotebook := {
       val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
       val configFile = args.headOption.map(file).getOrElse(baseDirectory.value / "benchmarkDatabricks.json")
