@@ -1,7 +1,8 @@
 %scala
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql.functions.{coalesce, col, current_timestamp, lit, udf}
+import org.apache.spark.sql.functions.{coalesce, col, current_timestamp, lit, udf, row_number}
 import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.expressions.Window
 import java.io.OutputStreamWriter
 import java.net.URI
 import java.nio.charset.StandardCharsets
@@ -74,7 +75,14 @@ if (numRecords > sourceTableCount) {
   dbutils.notebook.exit(s"ERROR: Requested number of records ($numRecords) is greater than available records in source table ($sourceTableCount). Aborting benchmark.")
 }
 
-val dfWrite = dfSource.limit(numRecords.toInt) // Take only the requested number of records
+println(s"Selecting $numRecords records for the benchmark...")
+// Use a window function to select the top N records without converting to Int.
+// This is more robust for Long values. We order by "id" to make the selection deterministic.
+val windowSpec = Window.orderBy(col("id"))
+val dfWrite = dfSource
+  .withColumn("row_num", row_number().over(windowSpec))
+  .where(col("row_num") <= numRecords)
+  .drop("row_num")
 
 val averageRowSizeBytes = 1085L
 val sizeInBytes = averageRowSizeBytes * numRecords
