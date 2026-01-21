@@ -1,11 +1,10 @@
 import sbt._
 import Keys._
 import scala.sys.process._
-import complete.DefaultParsers._
 import sbtassembly.AssemblyKeys.assembly
 import play.api.libs.json._
 
-object CustomTasks {
+object BenchmarkingTasks {
 
   lazy val createSpannerInstance = inputKey[Unit]("Creates a spanner instance")
   lazy val createSpannerDatabase = inputKey[Unit]("Creates a spanner database")
@@ -55,7 +54,7 @@ object CustomTasks {
     println(s"Importing notebook $localNotebookPath to $notebookPath on Databricks...")
     val importCommand = Seq(
       "databricks", "workspace", "import", notebookPath,
-      "--file", (baseDirectory / localNotebookPath).toString(),
+      "--file", (baseDirectory / localNotebookPath).toString,
       "--language", language,
       "--format", "SOURCE",
       "--overwrite"
