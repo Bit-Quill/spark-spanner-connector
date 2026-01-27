@@ -205,8 +205,19 @@ public class SpannerDataWriter implements DataWriter<InternalRow> {
 
             for (BatchWriteResponse response : stream) {
               if (response.getStatus().getCode() != Code.OK.getNumber()) {
-                for (int index : response.getIndexesList()) {
-                  failedGroups.add(currentBatch.get(index));
+                if (response.getIndexesCount() > 0) {
+                  // Specific items failed
+                  for (int index : response.getIndexesList()) {
+                    failedGroups.add(currentBatch.get(index));
+                  }
+                } else {
+                  // STATUS IS ERROR, BUT NO INDEXES -> ASSUME TOTAL FAILURE
+                  // We cannot identify which rows failed, so we must assume
+                  // the whole currentBatch (or the subset for this response) failed.
+                  throw new RuntimeException(
+                      "Spanner BatchWrite failed with status "
+                          + response.getStatus()
+                          + " but no specific row indexes were returned.");
                 }
               }
             }
