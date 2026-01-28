@@ -410,12 +410,8 @@ public class SpannerDataWriterTest {
       // IF WE REACH HERE, THE BUG IS CONFIRMED.
       // The writer saw "Unavailable", ignored it because indexes were empty,
       // and reported success.
-      System.out.println(
-          "TEST FAILED: Writer reported success despite Spanner returning UNAVAILABLE error.");
 
     } catch (Exception e) {
-      // If the code was correct, it SHOULD throw an exception here.
-      System.out.println("TEST PASSED: Writer correctly threw exception: " + e.getMessage());
       return; // Correct behavior
     }
 

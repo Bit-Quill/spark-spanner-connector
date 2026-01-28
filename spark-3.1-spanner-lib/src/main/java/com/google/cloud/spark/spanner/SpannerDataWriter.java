@@ -212,7 +212,7 @@ public class SpannerDataWriter implements DataWriter<InternalRow> {
                   }
                 } else {
                   // Status is error but no failed indices -> assume batch failure.
-                  throw new RuntimeException(
+                  throw new SpannerConnectorException(
                       "Spanner BatchWrite failed with status "
                           + response.getStatus()
                           + " but no specific row indexes were returned.");
