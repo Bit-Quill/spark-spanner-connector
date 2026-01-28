@@ -375,7 +375,7 @@ public class SpannerDataWriterTest {
 
     // Configure the mock to return an iterator over our list
     when(mockStream.iterator())
-        .thenAnswer(i -> Collections.singletonList(toxicResponseBuilder.build()));
+        .thenAnswer(i -> Collections.singletonList(toxicResponseBuilder.build()).iterator());
 
     // Return this mock stream when the client is called
     when(mockDbClient.batchWriteAtLeastOnce(any())).thenReturn(mockStream);
@@ -404,19 +404,19 @@ public class SpannerDataWriterTest {
       writer.write(row);
 
       // Commit triggers the flush and waits for results
-      writer.commit();
-
-      // --- 4. ASSERTION ---
-      // IF WE REACH HERE, THE BUG IS CONFIRMED.
-      // The writer saw "Unavailable", ignored it because indexes were empty,
-      // and reported success.
-
-    } catch (Exception e) {
-      return; // Correct behavior
+      try {
+        writer.commit();
+        // IF WE REACH HERE, THE BUG IS CONFIRMED.
+        // The writer saw "Unavailable", ignored it because indexes were empty,
+        // and reported success.
+        fail("The writer silently swallowed the Spanner error and reported success!");
+      } catch (IOException e) {
+        // Correct behavior: an exception was thrown.
+        // Let's also verify it's the right kind of exception.
+        assertThat(e).hasCauseThat().isInstanceOf(SpannerConnectorException.class);
+        assertThat(e.getCause().getMessage()).contains("Spanner BatchWrite failed with status");
+      }
     }
-
-    // Fail the test if no exception was thrown
-    fail("The writer silently swallowed the Spanner error and reported success!");
   }
 
   private InternalRow CreateInternalRow(long i) {
