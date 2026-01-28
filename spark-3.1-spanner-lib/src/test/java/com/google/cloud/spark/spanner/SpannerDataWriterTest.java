@@ -406,8 +406,8 @@ public class SpannerDataWriterTest {
       // Commit triggers the flush and waits for results
       try {
         writer.commit();
-        // IF WE REACH HERE, THE BUG IS CONFIRMED.
-        // The writer saw "Unavailable", ignored it because indexes were empty,
+        // If we reach here, there is a bug.
+        // The writer saw "Unavailable" error, ignored it because indexes were empty,
         // and reported success.
         fail("The writer silently swallowed the Spanner error and reported success!");
       } catch (IOException e) {
