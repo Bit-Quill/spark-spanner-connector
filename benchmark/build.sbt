@@ -1,5 +1,5 @@
 import scala.sys.process._
-import CustomTasks._
+import BenchmarkingTasks._
 //
 // spanner-spark-tests
 //
@@ -44,11 +44,11 @@ lazy val root = (project in file("."))
     },
 
     Compile / mainClass := Some("com.google.cloud.spark.spanner.SparkSpannerWriteBenchmark"),
-    spannerUp := (CustomTasks.spannerUp.evaluated),
-    spannerDown := (CustomTasks.spannerDown.evaluated),
-    prepareDatabricksSource := (CustomTasks.prepareDatabricksSource.evaluated)
+    spannerUp := (BenchmarkingTasks.spannerUp.evaluated),
+    spannerDown := (BenchmarkingTasks.spannerDown.evaluated),
+    prepareDatabricksSource := (BenchmarkingTasks.prepareDatabricksSource.evaluated)
   )
-  .settings(CustomTasks.customTaskSettings)
+  .settings(BenchmarkingTasks.customTaskSettings)
 
 
 
