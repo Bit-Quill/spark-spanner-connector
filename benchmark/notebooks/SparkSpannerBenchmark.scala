@@ -76,13 +76,22 @@ if (numRecords > sourceTableCount) {
 }
 
 println(s"Selecting $numRecords records for the benchmark...")
-// Use a window function to select the top N records without converting to Int.
-// This is more robust for Long values. We order by "id" to make the selection deterministic.
-val windowSpec = Window.orderBy(col("id"))
-val dfWrite = dfSource
-  .withColumn("row_num", row_number().over(windowSpec))
-  .where(col("row_num") <= numRecords)
-  .drop("row_num")
+// --- NEW FASTEST CODE (No Sort, Supports > 2B rows) ---
+// 1. Convert to RDD directly (No sorting needed)
+val rddRaw = dfSource.rdd
+
+// 2. Index the rows as they are read
+//    Spark optimizes this: it counts partition sizes first, then calculates offsets.
+//    No data moves across the network (No Shuffle).
+val rddWithIndex = rddRaw.zipWithIndex()
+
+// 3. Filter and convert back
+val dfWrite = spark.createDataFrame(
+  rddWithIndex
+    .filter { case (_, index) => index < numRecords } // Keeps 'Long' support
+    .map { case (row, _) => row },                    // Unwrap the Row
+  dfSource.schema
+)
 
 val averageRowSizeBytes = 1085L
 val sizeInBytes = averageRowSizeBytes * numRecords
