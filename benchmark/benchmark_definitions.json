@@ -1,0 +1,36 @@
+{
+  "benchmarks": [
+    {
+      "name": "dataproc-100k-records",
+      "description": "A small 100k record write test, intended for quick validation on Dataproc.",
+      "environment": "dataproc",
+      "dataSource": "default-100k-data",
+      "writeTable": "BenchmarkTest",
+      "numRecords": 100000,
+      "numPartitions": 5,
+      "mutationsPerTransaction": 1000
+    },
+    {
+      "name": "databricks-30M-records",
+      "description": "A large-scale 30M record write test on Databricks with custom transaction settings.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "writeTable": "BenchmarkTest",
+      "numRecords": 30000000,
+      "numPartitions": 40,
+      "mutationsPerTransaction": 5000,
+      "bytesPerTransaction": 3145728,
+      "numWriteThreads": 4,
+      "maxPendingTransactions": 5,
+      "assumeIdempotentRows": true
+    },
+    {
+      "name": "databricks-100k-defaults",
+      "description": "A 100k record write test on Databricks using a source table and default connector options.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "writeTable": "BenchmarkTest",
+      "numRecords": 100000
+    }
+  ]
+}
