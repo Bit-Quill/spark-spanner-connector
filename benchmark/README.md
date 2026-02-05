@@ -1,6 +1,6 @@
 # Spark Spanner Connector Benchmark
 
-This benchmark is designed to test the performance of the Spark Spanner Connector, particularly for write operations. It can be run on Google Cloud Dataproc or Databricks.
+This benchmark is designed to test the performance of the Spark Spanner Connector, particularly for write operations. It can be run on Google Cloud Dataproc.
 
 ## Getting Started
 
@@ -8,31 +8,20 @@ This guide walks through setting up your Google Cloud environment to run the Spa
 
 ### 1. Configure Your Environment
 
-The benchmark runner and supporting sbt tasks read a JSON file to configure your GCP project, Spanner instance, Dataproc cluster, and benchmark parameters. 
-Each task accepts an optional parameter specifying the path to the JSON file. If omitted, it defaults to `benchmark.json`.
+The benchmark runner and supporting sbt tasks now use a structured configuration:
+*   **Benchmark Definitions**: Defined in `benchmark/benchmark_definitions.json`. These describe what to test.
+*   **Data Sources**: Defined in `benchmark/data_sources.json`. These map logical data names to DDLs, allowing separation of schema from specific table names.
+*   **Environment Configuration**: Defined in `benchmark/environment.json`. This file contains all environment-specific settings (GCP project IDs, Dataproc cluster names, GCS bucket names, Spanner instance IDs, etc.) and mappings from logical data source names to physical table names in your environment.
 
-Create a `benchmark.json` file with the following structure, filling in the values for your environment.
+You need to create and configure your local `environment.json` file:
 
-```json
-{
-  "projectId": "your-gcp-project-id",
-  "instanceId": "your-spanner-instance-id",
-  "databaseId": "your-spanner-database-id",
-  "writeTable": "your-spanner-table-name",
-  "spannerRegion": "your-gcp-region",
-  "dataprocCluster": "spark-spanner-benchmark-cluster",
-  "dataprocRegion": "your-gcp-region",
-  "dataprocBucket": "your-dataproc-staging-bucket",
-  "resultsBucket": "your-benchmark-results-bucket",
-  "numRecords": 100000,
-  "numPartitions": 40,
-  "mutationsPerTransaction": 5000,
-  "bytesPerTransaction": 3145728,
-  "numWriteThreads": 4,
-  "maxPendingTransactions": 5,
-  "assumeIdempotentRows": true
-}
-```
+1.  Copy the template:
+    ```bash
+    cp benchmark/environment.json.template benchmark/environment.json
+    ```
+2.  Open `benchmark/environment.json` in your editor and fill in the values for the `dataproc` section with your specific details. You can ignore the `databricks` section if you are only running Dataproc benchmarks.
+
+**Important**: `benchmark/environment.json` is in `.gitignore` and should **not** be committed to the repository.
 
 ### 2. Set up Your GCP Project
 
@@ -42,7 +31,7 @@ Make sure you have the Google Cloud SDK (`gcloud`) installed and authenticated.
 # Set your project ID
 gcloud config set project your-gcp-project-id
 
-# Set your region (matching spannerRegion and dataprocRegion)
+# Set your region (matching spannerRegion)
 gcloud config set compute/region your-gcp-region
 ```
 
@@ -67,7 +56,7 @@ sbt createSpannerDatabase
 # Create the table for the write benchmark
 sbt createSpannerTable
 ```
-*Note: The `createSpannerTable` task will read the DDL from `./ddl/create_test_table.sql` and replace "TransferTest" with the `writeTable` value from your `benchmark.json`.*
+*Note: The `createSpannerTable` task will read the DDL from `./ddl/create_source_table.sql` and replace "TransferTest" with the `writeTable` value from your `benchmark.json`.*
 
 ### 4. Create GCS Buckets
 
@@ -112,7 +101,7 @@ Before you begin, make sure you have the following tools installed:
 - Apache Maven
 - sbt (Scala Build Tool)
 - Google Cloud SDK (`gcloud`)
-- Databricks CLI (if using Databricks)
+- `jq` (a lightweight and flexible command-line JSON processor)
 
 ## Authentication
 
@@ -124,255 +113,55 @@ This means that as long as the service account has the necessary IAM permissions
 
 There is no need to configure any additional authentication credentials (like service account keys) in the benchmark code or options.
 
-## Workflow
+## Benchmarking Workflow
 
-The benchmark is designed to be run against a locally built version of the Spark Spanner Connector. This allows you to test changes you've made to the connector before creating a pull request.
+This section describes how to run benchmarks using sbt tasks.
 
-The general workflow is:
-1.  Build and install the connector from your feature branch.
-2.  Build the benchmark, which packages the locally installed connector.
-3.  Run the benchmark on your Spark cluster.
+### sbt Tasks Overview
 
-### Step 1: Build and Install the Connector
+*   `sbt "runBenchmark <benchmark_name>"`: Builds the connector, runs the specified benchmark on your Dataproc or Databricks cluster, and outputs the GCS path of the result file.
+*   `sbt "setBnechmarkBaseline <benchmark_name> <gcs_path>"`: Copies a specific benchmark run's result (identified by its full GCS path) to establish it as the baseline for future comparisons.
+*   `sbt "compareBenchmarkResults <benchmark_name> <gcs_path>"`: Downloads a specific benchmark run's result (identified by its full GCS path) and its corresponding baseline, then outputs a formatted comparison report.
 
-1.  Check out the branch of the connector that you want to test (e.g., your feature branch with write support).
-2.  Build and install the connector to your local Maven repository. This makes it available to the benchmark project.
+### Workflow
 
+1.  **Build the Connector**: From the root of the repository, build the connector and install it into your local Maven repository. This makes it available to the benchmark project.
     ```bash
-    # From the root of the spark-spanner-connector repository
-    mvn clean install -P3.3
+    # Use the Spark version that matches your benchmark environment
+    mvn clean install -P3.3 -DskipTests
     ```
+2.  **Run a Benchmark and Establish Baseline**:
+    *   Navigate to the `benchmark` directory.
+    *   Run your chosen benchmark (e.g., `dataproc-100k-records`):
+        ```bash
+        cd benchmark
+        sbt "runBenchmark dataproc-100k-records"
+        ```
+    *   The script will print the GCS path where the result JSON was uploaded (e.g., `gs://<your-results-bucket>/SparkSpannerWriteBenchmark/<timestamp>_<githash>.json`). Note down the full GCS path.
+    *   Use this path to set it as the baseline:
+        ```bash
+        sbt "setBnechmarkBaseline dataproc-100k-records <full_gcs_path_from_above>"
+        ```
+    This step effectively tags a known-good performance run as your reference point.
 
-### Step 2: Build the Benchmark
-
-The benchmark is configured to be packaged as a self-contained "fat JAR" that includes the connector and all its dependencies.
-
-1.  Navigate to the `benchmark` directory.
-2.  Build the fat JAR using `sbt-assembly`.
-
-    ```bash
-    # From the benchmark directory
-    sbt assembly
-    ```
-    This will create a JAR file in the `target/scala-2.12/` directory, for example: `spanner-spark-benchmark-assembly-0.1.jar`.
-
-### Step 3: Run the Benchmark
-
-You can run the benchmark on Google Cloud Dataproc. The `build.sbt` file provides convenient tasks for this.
-
-Before running, you need to configure your environment in `benchmark.json`. This file contains all the settings for your GCP project, Spanner instance, Dataproc cluster, and benchmark parameters.
-
-#### Creating a Dataproc Cluster
-
-The `createDataprocCluster` task can be used to create a new Dataproc cluster for running the benchmark.
-
-**Configuration:**
-
-This task reads the following properties from `benchmark.json`:
-- `dataprocCluster`: The name for the new cluster.
-- `dataprocRegion`: The region for the cluster.
-- `dataprocBucket`: The GCS bucket to be associated with the cluster.
-- `projectId`: Your Google Cloud project ID.
-
-**Command:**
-
-The task accepts the following optional arguments to override the values in `benchmark.json`:
-- `--numWorkers`: The number of worker nodes.
-- `--masterMachineType`: The machine type for the master node.
-- `--workerMachineType`: The machine type for the worker nodes.
-- `--imageVersion`: The Dataproc image version.
-
-```bash
-# Example from the benchmark directory
-sbt "createDataprocCluster --numWorkers 4"
-```
-
-#### Creating the Results Bucket
-
-The `createResultsBucket` task creates a GCS bucket to store the JSON results from benchmark runs.
-
-**Configuration:**
-
-This task reads the following properties from `benchmark.json`:
-- `resultsBucket`: The name of the GCS bucket to create.
-- `projectId`: Your Google Cloud project ID.
-- `dataprocRegion`: The location for the bucket (e.g., `us-central1`).
-
-**Command:**
-
-```bash
-# From the benchmark directory
-sbt createResultsBucket
-```
-This command will create the bucket if it does not already exist.
-
-#### Running on Google Cloud Dataproc
-
-The `runDataproc` task submits the benchmark job to a Dataproc cluster. All configuration for the benchmark is read from `benchmark.json`.
-
-**Command:**
-
-```bash
-# Example from the benchmark directory, using settings from benchmark.json
-sbt runDataproc
-```
-
-You can also specify a different configuration file as an argument:
-```bash
-sbt "runDataproc my_benchmark_config.json"
-```
-
-### Running on Databricks
-
-To run benchmarks on Databricks, you will use the `runDatabricksNotebook` sbt task. This task uploads the necessary connector JAR to a Unity Catalog Volume, imports a benchmark notebook to your Databricks workspace, and then executes the notebook on a specified cluster.
-
-#### Configuration
-
-The `runDatabricksNotebook` task reads its configuration from `benchmarkDatabricks.json`. This file contains Databricks-specific settings and the benchmark parameters.
-
-Ensure your `benchmarkDatabricks.json` file is configured correctly:
-
-```json
-{
-  "databricksHost": "https://your-databricks-host",
-  "databricksToken": "your-databricks-token",
-  "clusterId": "your-cluster-id",
-  "notebookPath": "/Users/Shared/SparkSpannerBenchmark",
-  "localNotebookPath": "notebooks/SparkSpannerBenchmark.scala",
-  "ucVolumePath": "/Volumes/your_catalog/your_schema/your_volume/jars",
-  
-  "projectId": "your-gcp-project-id",
-  "instanceId": "your-spanner-instance-id",
-  "databaseId": "your-spanner-database-id",
-  "writeTable": "your-spanner-table",
-
-  "numRecords": 100000,
-  "numPartitions": 40,
-  "mutationsPerTransaction": 5000,
-  "bytesPerTransaction": 3145728,
-  "numWriteThreads": 4,
-  "maxPendingTransactions": 5,
-  "assumeIdempotentRows": true
-}
-```
-
-*   `databricksHost`: The URL of your Databricks workspace.
-*   `databricksToken`: A Databricks personal access token.
-*   `clusterId`: The ID of the Databricks cluster where the notebook will be executed.
-*   `notebookPath`: The absolute path in your Databricks workspace where the notebook will be imported (e.g., `/Users/your.email@example.com/SparkSpannerBenchmark`).
-*   `localNotebookPath`: The path to the local notebook file (relative to the `benchmark` directory).
-*   `ucVolumePath`: The Unity Catalog Volume path where the connector JAR will be uploaded (e.g., `/Volumes/catalog/schema/volume/jars`).
-
-#### How to get Cluster ID
-
-To obtain the Cluster ID:
-1.  Navigate to your Databricks workspace.
-2.  In the sidebar, click **Compute**.
-3.  Click on the name of the cluster you intend to use for the benchmark.
-4.  In the cluster configuration page, the Cluster ID will be displayed in the URL, usually after `/clusters/`. For example, in `https://<databricks-host>/#setting/clusters/<cluster-id>/configuration`, `<cluster-id>` is your Cluster ID.
-
-#### Running the Benchmark
-
-Before running, ensure you have:
-1.  Built and installed the Spark Spanner Connector to your local Maven repository using `mvn clean install -P<spark_version>` (e.g., `mvn clean install -P3.3`).
-2.  Configured `benchmarkDatabricks.json` with all necessary Databricks and benchmark parameters.
-3.  Set up your Databricks CLI with authentication to your workspace.
-
-To execute the benchmark on Databricks:
-
-```bash
-# From the benchmark directory
-sbt runDatabricksNotebook
-```
-
-You can also specify a different configuration file:
-```bash
-sbt "runDatabricksNotebook my_databricks_config.json"
-```
-
-The task will:
-1.  Find the locally built Spark Spanner Connector JAR.
-2.  Upload the JAR to the specified Unity Catalog Volume.
-3.  Install the JAR as a library on the Databricks cluster.
-4.  Import the local benchmark notebook to your Databricks workspace.
-5.  Run the notebook on the cluster, passing the benchmark parameters.
-6.  Uninstall the JAR from the cluster after the notebook run completes.
-
-#### Providing GCP Credentials on Databricks
-
-When running the benchmark notebook on Databricks, the cluster needs to authenticate to Google Cloud to access Spanner. The recommended and most secure method is to use Databricks secrets backed by an init script.
-
-This method avoids exposing credentials in notebooks and uses the cluster's environment variables to securely pass the credentials to the Google Cloud client libraries.
-
-##### Step 1: Store GCP Service Account Key in Databricks Secrets
-
-First, you need to store your GCP service account JSON key file as a secret in your Databricks workspace.
-
-1.  **Create a Secret Scope:** If you don't have one already, create a secret scope.
-    ```bash
-    databricks secrets create-scope --scope your-secret-scope
-    ```
-
-2.  **Add the Secret:** Add the content of your GCP service account JSON key file as a secret within this scope.
-    ```bash
-    databricks secrets put-secret --scope your-secret-scope --key your-gcp-key-name --binary-file /path/to/your/gcp-credentials.json
-    ```
-
-##### Step 2: Create and Upload the Init Script
-
-Next, create an init script that will run on cluster startup. This script reads the secret content from an environment variable and writes it to the location where Google Cloud libraries expect to find Application Default Credentials (ADC).
-
-1.  **Create the script file:** Create a file named `setup_gcp_credentials.sh` with the following content. A copy of this script is also available in the `benchmark` directory.
-    ```bash
-    #!/bin/bash
-    # This script configures Google Application Default Credentials on a Databricks cluster.
-    set -e
-
-    # This environment variable must be configured on the cluster to point to the Databricks secret.
-    GCP_CREDENTIALS_CONTENT="$GCP_CREDENTIALS"
-
-    if [ -z "$GCP_CREDENTIALS_CONTENT" ]; then
-      echo "Error: The GCP_CREDENTIALS environment variable is not set." >&2
-      echo "Please configure this in the Spark Cluster Environment Variables:" >&2
-      echo "GCP_CREDENTIALS={{secrets/your-secret-scope/your-gcp-key-name}}" >&2
-      exit 1
-    fi
-
-    ADC_DIR="/root/.config/gcloud"
-    ADC_FILE="$ADC_DIR/application_default_credentials.json"
-
-    echo "Creating directory for ADC file: $ADC_DIR"
-    mkdir -p "$ADC_DIR"
-
-    echo "Writing credentials to $ADC_FILE"
-    cat > "$ADC_FILE" <<EOF
-$GCP_CREDENTIALS_CONTENT
-EOF
-
-    echo "Successfully configured Google Application Default Credentials."
-    ```
-
-2.  **Upload the script:** Upload this script to a location in your Databricks File System (DBFS).
-    ```bash
-    databricks fs cp setup_gcp_credentials.sh dbfs:/databricks/init_scripts/setup_gcp_credentials.sh
-    ```
-
-##### Step 3: Configure the Databricks Cluster
-
-Finally, configure your cluster to use the secret and the init script.
-
-1.  Navigate to your cluster's configuration page.
-2.  Under **Advanced Options**, select the **Spark** tab.
-3.  In the **Environment Variables** text box, add the following line. This tells Databricks to securely inject your secret's content into the `GCP_CREDENTIALS` environment variable.
-    ```
-    GCP_CREDENTIALS={{secrets/your-secret-scope/your-gcp-key-name}}
-    ```
-    Replace `your-secret-scope` and `your-gcp-key-name` with the actual scope and key you used in Step 1.
-
-4.  Select the **Init Scripts** tab.
-5.  Add the path to the init script you uploaded to DBFS, for example: `dbfs:/databricks/init_scripts/setup_gcp_credentials.sh`.
-6.  Restart your cluster for the changes to take effect. The init script will now run on every startup, ensuring credentials are in place.
-
+3.  **Make Code Changes and Compare**:
+    *   Make any desired code changes to the Spark-Spanner connector.
+    *   Re-build the connector to ensure your changes are included:
+        ```bash
+        # From the project root
+        mvn clean install -P3.3 -DskipTests
+        ```
+    *   Run the same benchmark again to generate new results:
+        ```bash
+        # Still in the benchmark directory
+        sbt "runBenchmark dataproc-100k-records"
+        ```
+    *   Note down the GCS path for the new run from the output.
+    *   Compare the new results against your established baseline:
+        ```bash
+        sbt "compareBenchmarkResults dataproc-100k-records <full_gcs_path_for_new_run>"
+        ```
+    The task will output a formatted comparison report, showing performance deltas between your baseline and the new run.
 
 ## Benchmark Results
 
@@ -380,11 +169,11 @@ After a benchmark run is complete, the results are stored as a JSON file in the 
 
 ### Location
 
-You can find the results in the bucket specified by the `resultsBucket` property in your `benchmark.json` file.
+You can find the results in the bucket specified by the `resultsBucket` property in your `environment.json` file.
 
 The directory structure and file naming convention is as follows:
 - **Bucket:** `gs://<results_bucket_name>/`
-- **Directory:** `/<benchmark_name>/`
+- **Directory:** `/SparkSpannerWriteBenchmark/`
 - **File:** `/<run_id>.json`
 
 For example:
