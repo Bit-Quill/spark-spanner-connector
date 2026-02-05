@@ -57,13 +57,13 @@ object BenchmarkingTasks {
     val databricksHost = (config \ "databricksHost").as[String]
     val databricksToken = (config \ "databricksToken").as[String]
     val clusterId = (config \ "clusterId").as[String]
-    val baseDatabricksNotebookPath = (config \ "notebookPath").as[String]
-    val localNotebookPath = (config \ "notebookPath").as[String]
-    val notebookBasename = new java.io.File(localNotebookPath).getName
-    val notebookPath = s"${baseDatabricksNotebookPath.stripSuffix("/")}/$notebookBasename"
+    val baseDatabricksWorkspacePath = (config \ "notebookPath").asOpt[String].getOrElse("/Shared") // Base path in Databricks Workspace
+    val localNotebookFilePath = (config \ "localNotebookFilePath").as[String] // Path to the local notebook file
+    val notebookBasename = new java.io.File(localNotebookFilePath).getName
+    val notebookPath = s"${baseDatabricksWorkspacePath.stripSuffix("/")}/$notebookBasename"
 
     // 1. Import notebook
-    val language = localNotebookPath.substring(localNotebookPath.lastIndexOf('.') + 1).toUpperCase match {
+    val language = localNotebookFilePath.substring(localNotebookFilePath.lastIndexOf('.') + 1).toUpperCase match {
       case "PY" => "PYTHON"
       case "SQL" => "SQL"
       case "R" => "R"
@@ -71,10 +71,10 @@ object BenchmarkingTasks {
       case other => sys.error(s"Unsupported notebook language extension: .$other")
     }
 
-    println(s"Importing notebook $localNotebookPath to $notebookPath on Databricks...")
+    println(s"Importing notebook $localNotebookFilePath to $notebookPath on Databricks...")
     val importCommand = Seq(
       "databricks", "workspace", "import", notebookPath,
-      "--file", (baseDirectory / localNotebookPath).toString,
+      "--file", (baseDirectory / localNotebookFilePath).toString,
       "--language", language,
       "--format", "SOURCE",
       "--overwrite"
@@ -87,7 +87,7 @@ object BenchmarkingTasks {
     println("Notebook imported successfully.")
 
     // 2. Prepare parameters
-    val databricksKeys = Set("databricksHost", "databricksToken", "clusterId", "notebookPath", "localNotebookPath", "localPrepareNotebookPath", "ucVolumePath")
+    val databricksKeys = Set("databricksHost", "databricksToken", "clusterId", "notebookPath", "localNotebookFilePath", "localPrepareNotebookPath", "ucVolumePath")
     val allParams = config.as[JsObject].value.filterKeys(k => !databricksKeys.contains(k))
     val baseParameters = JsObject(
       allParams.map { case (key, value) =>
@@ -237,7 +237,9 @@ object BenchmarkingTasks {
             }
 
           case "databricks" =>
-            sys.error("Databricks benchmark execution not yet implemented for the new runner.")
+            val notebookPath = (benchmarkDef \ "localNotebookPath").as[String]
+            val configWithLocalPath = finalMergedConfig + ("localNotebookFilePath" -> Json.toJson(notebookPath))
+            runDatabricksNotebookHelper(configWithLocalPath, baseDir)
 
           case _ =>
             sys.error(s"Unsupported environment type: '$environmentType'.")
@@ -590,7 +592,7 @@ object BenchmarkingTasks {
         sys.error("Configuration for environment 'databricks' not found in environment.json.")
       }
 
-      val configWithNotebook = databricksConfig + ("localNotebookPath" -> Json.toJson(notebookPath))
+      val configWithNotebook = databricksConfig + ("localNotebookFilePath" -> Json.toJson(notebookPath))
 
       runDatabricksNotebookHelper(configWithNotebook, baseDir)
     },

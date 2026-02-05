@@ -16,6 +16,8 @@
       "environment": "databricks",
       "dataSource": "generated-data",
       "writeTable": "BenchmarkTest",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
       "numRecords": 30000000,
       "numPartitions": 40,
       "mutationsPerTransaction": 5000,
@@ -30,6 +32,9 @@
       "environment": "databricks",
       "dataSource": "generated-data",
       "writeTable": "BenchmarkTest",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
+      "numPartitions": 4,
       "numRecords": 100000
     }
   ]
