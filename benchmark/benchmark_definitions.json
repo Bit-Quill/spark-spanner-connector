@@ -27,7 +27,7 @@
       "assumeIdempotentRows": true
     },
     {
-      "name": "databricks-100k-defaults",
+      "name": "databricks-100k-records",
       "description": "A 100k record write test on Databricks using a source table and default connector options.",
       "environment": "databricks",
       "dataSource": "generated-data",
