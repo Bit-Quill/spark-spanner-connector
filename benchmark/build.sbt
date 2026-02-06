@@ -21,6 +21,12 @@ lazy val root = (project in file("."))
   .settings(
     name := "spanner-spark-benchmark",
     resolvers += "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository",
+    dependencyOverrides ++= Seq(
+      "org.slf4j" % "slf4j-api" % "1.7.16",
+      "com.fasterxml.jackson.core" % "jackson-core" % "2.15.2",
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.15.2",
+      "com.fasterxml.jackson.core" % "jackson-annotations" % "2.15.2"
+    ),
     libraryDependencies ++= Seq(
       "com.google.cloud.spark.spanner" % s"spark-$sparkVersion-spanner" % "0.0.1-SNAPSHOT",
       "org.apache.spark" %% "spark-sql" % sparkSqlVersion % "provided",
