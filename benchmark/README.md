@@ -120,7 +120,7 @@ This section describes how to run benchmarks using sbt tasks.
 ### sbt Tasks Overview
 
 *   `sbt "runBenchmark <benchmark_name>"`: Builds the connector, runs the specified benchmark on your Dataproc or Databricks cluster, and outputs the GCS path of the result file.
-*   `sbt "setBnechmarkBaseline <benchmark_name> <gcs_path>"`: Copies a specific benchmark run's result (identified by its full GCS path) to establish it as the baseline for future comparisons.
+*   `sbt "setBenchmarkBaseline <benchmark_name> <gcs_path>"`: Copies a specific benchmark run's result (identified by its full GCS path) to establish it as the baseline for future comparisons.
 *   `sbt "compareBenchmarkResults <benchmark_name> <gcs_path>"`: Downloads a specific benchmark run's result (identified by its full GCS path) and its corresponding baseline, then outputs a formatted comparison report.
 
 ### Workflow
