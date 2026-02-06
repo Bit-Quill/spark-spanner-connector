@@ -249,7 +249,7 @@ object BenchmarkingTasks {
       setBenchmarkBaseline := {
         val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
         if (args.length < 2) {
-          sys.error("Usage: sbt \"setBaseline <benchmarkName> <gcsPath>\"")
+          sys.error("Usage: sbt \"setBenchmarkBaseline <benchmarkName> <gcsPath>\"")
         }
         val benchmarkName = args.head
         val sourceGcsPath = args(1)
