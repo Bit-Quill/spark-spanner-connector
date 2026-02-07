@@ -5,7 +5,6 @@
       "description": "A small 100k record write test, intended for quick validation on Dataproc.",
       "environment": "dataproc",
       "dataSource": "default-100k-data",
-      "writeTable": "BenchmarkTest",
       "numRecords": 100000,
       "numPartitions": 5,
       "mutationsPerTransaction": 1000
@@ -15,7 +14,6 @@
       "description": "A large-scale 30M record write test on Databricks with custom transaction settings.",
       "environment": "databricks",
       "dataSource": "generated-data",
-      "writeTable": "BenchmarkTest",
       "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
       "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
       "numRecords": 30000000,
@@ -31,11 +29,41 @@
       "description": "A 100k record write test on Databricks using a source table and default connector options.",
       "environment": "databricks",
       "dataSource": "generated-data",
-      "writeTable": "BenchmarkTest",
       "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
       "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
       "numPartitions": 4,
       "numRecords": 100000
+    },
+    {
+      "name": "databricks-1mil-records",
+      "description": "A 1mil record write test on Databricks using a source table and default connector options.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
+      "numPartitions": 4,
+      "numRecords": 1000000
+    },
+    {
+      "name": "databricks-10mil-records",
+      "description": "A 10mil record write test on Databricks using a source table and default connector options.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
+      "numPartitions": 4,
+      "numRecords": 10000000
+    },
+
+    {
+      "name": "databricks-100mil-records",
+      "description": "A 100mil record write test on Databricks using a source table and default connector options.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
+      "numPartitions": 4,
+      "numRecords": 100000000
     }
   ]
 }
