@@ -641,7 +641,7 @@ object BenchmarkingTasks {
       if (args.isEmpty) {
         sys.error("Usage: sbt \"runDataproc <benchmarkName>\"")
       }
-      val benchmarkName = args(0)
+      val benchmarkName = args.head
       val baseDir = baseDirectory.value
       val (benchmarkDef, specificEnvConfig, environmentType) = getBenchmarkContext(benchmarkName, baseDir)
 

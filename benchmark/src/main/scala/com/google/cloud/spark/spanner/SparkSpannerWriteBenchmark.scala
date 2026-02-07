@@ -1,5 +1,6 @@
 package com.google.cloud.spark.spanner
 
+import org.apache.spark.util.SizeEstimator
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.sql.functions.{coalesce, col, current_timestamp, lit, udf}
 import org.apache.spark.sql.{SaveMode, SparkSession}
@@ -78,8 +79,10 @@ object SparkSpannerWriteBenchmark {
         current_timestamp().as("created_at"),
         current_timestamp().as("updated_at")
       )
+      .cache() // Cache the DataFrame for size estimation and the write operation
 
-    val averageRowSizeBytes = 1085L
+    // Dynamically calculate the average row size
+    val averageRowSizeBytes = SizeEstimator.estimate(dfWrite.first())
     val sizeInBytes = averageRowSizeBytes * numRecords
     val sizeMb = sizeInBytes / (1024 * 1024)
     println(s"Estimated job size: $sizeMb MB")
@@ -105,6 +108,7 @@ object SparkSpannerWriteBenchmark {
       .option("table", writeTable)
       .mode(SaveMode.Append)
       .save()
+    dfWrite.unpersist() // Release the cached DataFrame
     val endTime = System.nanoTime()
     val durationSeconds = (endTime - startTime) / 1e9
     val throughput = sizeMb / durationSeconds
