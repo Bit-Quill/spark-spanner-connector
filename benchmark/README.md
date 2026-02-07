@@ -11,7 +11,7 @@ This guide walks through setting up your Google Cloud environment to run the Spa
 The benchmark runner and supporting sbt tasks now use a structured configuration:
 *   **Benchmark Definitions**: Defined in `benchmark/benchmark_definitions.json`. These describe what to test.
 *   **Data Sources**: Defined in `benchmark/data_sources.json`. These map logical data names to DDLs, allowing separation of schema from specific table names.
-*   **Environment Configuration**: Defined in `benchmark/environment.json`. This file contains all environment-specific settings (GCP project IDs, Dataproc cluster names, GCS bucket names, Spanner instance IDs, etc.) and mappings from logical data source names to physical table names in your environment.
+*   **Environment Configuration**: Defined in `benchmark/environment.json`. This file contains all environment-specific settings (GCP project IDs, Dataproc cluster names, GCS bucket names, Spanner instance IDs, Databricks host/token/cluster IDs, etc.) and mappings from logical data source names to physical table names in your environment.
 
 You need to create and configure your local `environment.json` file:
 
@@ -19,7 +19,9 @@ You need to create and configure your local `environment.json` file:
     ```bash
     cp benchmark/environment.json.template benchmark/environment.json
     ```
-2.  Open `benchmark/environment.json` in your editor and fill in the values for the `dataproc` section with your specific details. You can ignore the `databricks` section if you are only running Dataproc benchmarks.
+2.  Open `benchmark/environment.json` in your editor and fill in the values for the `dataproc` or `databricks` sections with your specific details.
+
+**Important for Databricks GCS Access**: If running benchmarks on Databricks and writing results to GCS, ensure that the `application_default_credentials.json` file is provisioned to each worker node's filesystem at `/root/.config/gcloud/application_default_credentials.json`. The benchmark notebook expects this file to be present at that exact location.
 
 **Important**: `benchmark/environment.json` is in `.gitignore` and should **not** be committed to the repository.
 
@@ -43,20 +45,20 @@ gcloud services enable dataproc.googleapis.com
 
 ### 3. Create Spanner Resources
 
-Use the provided sbt tasks to create the Spanner instance, database, and table. These tasks read their configuration from `benchmark.json`.
+Use the provided sbt tasks to ensure the necessary Spanner instance, database, and table exist for your benchmark run. These tasks read their configuration (project ID, instance ID, database ID, etc.) from the `environment.json` file.
 
 ```bash
-# Create a Spanner instance (ensure spannerRegion is set in benchmark.json or use --region argument)
-# Example: sbt "createSpannerInstance --region us-central1"
-sbt createSpannerInstance
+# Ensure Spanner instance and database exist for a specific benchmark scenario.
+# This task will create the instance and database if they don't exist.
+# Example: sbt "spannerUp dataproc-100k-records"
+sbt "spannerUp <benchmark_name>"
 
-# Create a Spanner database
-sbt createSpannerDatabase
-
-# Create the table for the write benchmark
-sbt createSpannerTable
+# Create the Spanner table required for a specific benchmark scenario.
+# This task uses the DDL defined in `data_sources.json` for the given benchmark.
+# Example: sbt "createBenchmarkSpannerTable dataproc-100k-records"
+sbt "createBenchmarkSpannerTable <benchmark_name>"
 ```
-*Note: The `createSpannerTable` task will read the DDL from `./ddl/create_source_table.sql` and replace "TransferTest" with the `writeTable` value from your `benchmark.json`.*
+*Note: The `createBenchmarkSpannerTable` task will infer the DDL file from `data_sources.json` based on the benchmark's `dataSource` and automatically replace the placeholder table name with the `writeTable` value derived from your benchmark configuration.*
 
 ### 4. Create GCS Buckets
 
@@ -105,13 +107,21 @@ Before you begin, make sure you have the following tools installed:
 
 ## Authentication
 
-The benchmark authenticates to Google Cloud Spanner using the service account of the Dataproc cluster's VM instances.
+The benchmark handles authentication differently depending on the environment:
 
-When the Dataproc cluster is created using the `createDataprocCluster` task, it is configured with the `https://www.googleapis.com/auth/cloud-platform` scope. This scope grants the cluster's service account broad access to Google Cloud APIs, including Spanner.
+### Google Cloud Dataproc
 
-This means that as long as the service account has the necessary IAM permissions for Spanner (e.g., `roles/spanner.databaseUser`), the benchmark will be able to authenticate and write to the Spanner table.
+On Google Cloud Dataproc, the benchmark authenticates to Google Cloud Spanner using the service account of the cluster's VM instances.
+When the Dataproc cluster is created, it should be configured with appropriate scopes (e.g., `https://www.googleapis.com/auth/cloud-platform`).
+As long as the cluster's service account has the necessary IAM permissions for Spanner (e.g., `roles/spanner.databaseUser`) and GCS (e.g., `roles/storage.objectAdmin`), no additional authentication configuration is needed within the benchmark code.
 
-There is no need to configure any additional authentication credentials (like service account keys) in the benchmark code or options.
+### Databricks
+
+When running on Databricks, authentication to Google Cloud Spanner is handled by the Databricks Spark connector using credentials provisioned to the cluster.
+
+**For GCS Access**: The `SparkSpannerBenchmark.scala` notebook is configured to use Application Default Credentials (ADC) for writing results to Google Cloud Storage. You *must* ensure that the `application_default_credentials.json` file is present on each worker node's filesystem at the exact path `/root/.config/gcloud/application_default_credentials.json`. This file should contain the JSON key for a service account with `roles/storage.objectAdmin` or equivalent permissions for your results bucket.
+
+**For Spanner Access**: Ensure your Databricks cluster is configured to authenticate to Spanner. This typically involves setting up service account credentials directly within your Databricks cluster configuration or secrets, and providing them to the Spark Spanner connector options (e.g., `projectId`, `instanceId`, `databaseId`, etc., which implicitly assume an authenticated environment).
 
 ## Benchmarking Workflow
 
@@ -140,7 +150,7 @@ This section describes how to run benchmarks using sbt tasks.
     *   The script will print the GCS path where the result JSON was uploaded (e.g., `gs://<your-results-bucket>/SparkSpannerWriteBenchmark/<timestamp>_<githash>.json`). Note down the full GCS path.
     *   Use this path to set it as the baseline:
         ```bash
-        sbt "setBnechmarkBaseline dataproc-100k-records <full_gcs_path_from_above>"
+        sbt "setBenchmarkBaseline dataproc-100k-records <full_gcs_path_from_above>"
         ```
     This step effectively tags a known-good performance run as your reference point.
 

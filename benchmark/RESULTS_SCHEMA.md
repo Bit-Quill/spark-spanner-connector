@@ -32,9 +32,7 @@ This document defines the schema for the JSON files that store the results of be
     "recordCount": "long - Number of records written"
   },
   "sparkConfig": {
-    "numPartitions": "int",
-    "workerCount": "int",
-    "coreCount": "int"
+    "numPartitions": "int"
   }
 }
 ```
