@@ -3,10 +3,13 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.sql.functions.{coalesce, col, current_timestamp, lit, udf, row_number}
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.expressions.Window
+import org.apache.spark.util.SizeEstimator
 import java.io.OutputStreamWriter
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import java.time.Duration
+import spark.implicits._
 
 // Declare widgets to define parameters for the notebook
 dbutils.widgets.text("projectId", "", "GCP Project ID")
@@ -21,7 +24,7 @@ dbutils.widgets.text("maxPendingTransactions", "5", "Maximum pending transaction
 dbutils.widgets.text("assumeIdempotentRows", "true", "Assume idempotent rows")
 dbutils.widgets.text("resultsBucket", "", "GCS Bucket for results")
 dbutils.widgets.text("buildSparkVersion", "3.3", "Spark version used for the connector")
-dbutils.widgets.text("numPartitions", (5 * 4 * 2).toString, "Number of partitions for the DataFrame")
+dbutils.widgets.text("numPartitions", "40", "Number of partitions for the DataFrame")
 dbutils.widgets.text("sourceTable", "", "The name of the source Delta table to read from")
 
 println("Running Spark Spanner Connector Benchmark...")
@@ -46,26 +49,21 @@ val maxPendingTransactions = getOrDefault("maxPendingTransactions", "5").toInt
 val assumeIdempotentRows = getOrDefault("assumeIdempotentRows", "true").toBoolean
 val resultsBucket = dbutils.widgets.get("resultsBucket")
 val buildSparkVersion = dbutils.widgets.get("buildSparkVersion")
+val generateUUID = udf(() => UUID.randomUUID().toString)
 
-val defaultPartitions = 5 * 4 * 2
-val numPartitions = getOrDefault("numPartitions", defaultPartitions.toString).toInt
+val numPartitions = getOrDefault("numPartitions", "40").toInt
 
-println(s"projectId: $projectId")
-println(s"instanceId: $instanceId")
-println(s"databaseId: $databaseId")
-println(s"writeTable: $writeTable")
-println(s"sourceTable: $sourceTable")
-println(s"numRecords: $numRecords")
-println(s"numPartitions: $numPartitions")
+if (numRecords > Int.MaxValue) {
+  dbutils.notebook.exit(s"ERROR: numRecords ($numRecords) exceeds the maximum value for an Integer (${Int.MaxValue}) and cannot be used with the 'limit' function.")
+}
 
 if (sourceTable.isEmpty) {
   dbutils.notebook.exit("ERROR: sourceTable widget cannot be empty.")
 }
 
-import spark.implicits._
 
 println(s"Reading from source table '$sourceTable'...")
-val dfSource = spark.read.table(sourceTable) // Renamed from dfWrite to dfSource for clarity
+val dfSource = spark.read.table(sourceTable)
 
 val sourceTableCount = dfSource.count() // Get the total count of the source table
 
@@ -76,32 +74,16 @@ if (numRecords > sourceTableCount) {
 }
 
 println(s"Selecting $numRecords records for the benchmark...")
-// --- NEW FASTEST CODE (No Sort, Supports > 2B rows) ---
-// 1. Convert to RDD directly (No sorting needed)
-val rddRaw = dfSource.rdd
+val dfWrite = dfSource.limit(numRecords.toInt).cache()
 
-// 2. Index the rows as they are read
-//    Spark optimizes this: it counts partition sizes first, then calculates offsets.
-//    No data moves across the network (No Shuffle).
-val rddWithIndex = rddRaw.zipWithIndex()
-
-// 3. Filter and convert back
-val dfWrite = spark.createDataFrame(
-  rddWithIndex
-    .filter { case (_, index) => index < numRecords } // Keeps 'Long' support
-    .map { case (row, _) => row },                    // Unwrap the Row
-  dfSource.schema
-)
-
-val averageRowSizeBytes = 1085L
+val averageRowSizeBytes = SizeEstimator.estimate(dfWrite.first())
 val sizeInBytes = averageRowSizeBytes * numRecords
 val sizeMb = sizeInBytes / (1024 * 1024)
 println(s"Estimated job size: $sizeMb MB")
 println(f"Average row size: $averageRowSizeBytes bytes")
 println(s"Number of partitions: $numPartitions")
 
-val dfPartitioned = dfWrite.repartitionByRange(numPartitions, col("id")).sortWithinPartitions(col("id"))
-
+val dfPartitioned = dfWrite.repartition(numPartitions).sortWithinPartitions(col("id"))
 println(s"Beginning write to table '$writeTable' with mutationsPerTransaction: $mutationsPerTransaction")
 val startTime = System.nanoTime()
 val provider = s"com.google.cloud.spark.spanner.Spark${buildSparkVersion.replace(".", "")}SpannerTableProvider"
@@ -120,7 +102,7 @@ dfPartitioned
   .mode(SaveMode.Append)
   .save()
 val endTime = System.nanoTime()
-val durationSeconds = (endTime - startTime) / 1e9
+val durationSeconds = Duration.ofNanos(endTime - startTime).toMillis
 val throughput = sizeMb / durationSeconds
 
 println("Ending write")
@@ -164,7 +146,15 @@ val resultJson =
     }
   }"""
 
-val resultsPath = s"gs://$resultsBucket/SparkSpannerWriteBenchmark/${runTimestamp}_$runId.json"
+// Expects path for Application Default Credentials (ADC) file
+val gcpADCKeyFilePath = "/root/.config/gcloud/application_default_credentials.json"
+println(s"Configuring GCS connector with Application Default Credentials from: $gcpADCKeyFilePath")
+
+// Set Hadoop configuration for GCS connector using the ADC file
+spark.sparkContext.hadoopConfiguration.set("google.cloud.auth.service.account.enable", "true")
+spark.sparkContext.hadoopConfiguration.set("google.cloud.auth.service.account.json.keyfile", gcpADCKeyFilePath)
+
+val resultsPath = s"gs://$resultsBucket/SparkSpannerWriteBenchmarkNotebook/${runTimestamp}_$runId.json"
 println(s"Writing results to $resultsPath")
 
 val resultsURI = new URI(resultsPath)
@@ -181,4 +171,5 @@ try {
 
 println("Finished writing results.")
 
+dfWrite.unpersist()
 dbutils.notebook.exit("SUCCESS")

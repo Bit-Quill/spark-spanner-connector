@@ -1,47 +1,22 @@
 {
   "benchmarks": [
     {
-      "name": "dataproc-100k-records",
-      "description": "A small 100k record write test, intended for quick validation on Dataproc.",
+      "name": "dataproc-100mil-records",
+      "description": "A  100mil record write test for validation on Dataproc.",
       "environment": "dataproc",
-      "dataSource": "default-100k-data",
-      "numRecords": 100000,
-      "numPartitions": 5,
+      "dataSource": "default-100mil-data",
+      "numRecords": 100000000,
+      "numPartitions": 800,
       "mutationsPerTransaction": 1000
-    },
-    {
-      "name": "databricks-30M-records",
-      "description": "A large-scale 30M record write test on Databricks with custom transaction settings.",
-      "environment": "databricks",
-      "dataSource": "generated-data",
-      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
-      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
-      "numRecords": 30000000,
-      "numPartitions": 40,
-      "mutationsPerTransaction": 5000,
-      "bytesPerTransaction": 3145728,
-      "numWriteThreads": 4,
-      "maxPendingTransactions": 5,
-      "assumeIdempotentRows": true
-    },
-    {
-      "name": "databricks-100k-records",
-      "description": "A 100k record write test on Databricks using a source table and default connector options.",
-      "environment": "databricks",
-      "dataSource": "generated-data",
-      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
-      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
-      "numPartitions": 4,
-      "numRecords": 100000
     },
     {
       "name": "databricks-1mil-records",
       "description": "A 1mil record write test on Databricks using a source table and default connector options.",
       "environment": "databricks",
       "dataSource": "generated-data",
-      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmarkNotebook.scala",
       "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
-      "numPartitions": 4,
+      "numPartitions": 16,
       "numRecords": 1000000
     },
     {
@@ -49,9 +24,9 @@
       "description": "A 10mil record write test on Databricks using a source table and default connector options.",
       "environment": "databricks",
       "dataSource": "generated-data",
-      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmarkNotebook.scala",
       "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
-      "numPartitions": 4,
+      "numPartitions": 80,
       "numRecords": 10000000
     },
 
@@ -60,10 +35,21 @@
       "description": "A 100mil record write test on Databricks using a source table and default connector options.",
       "environment": "databricks",
       "dataSource": "generated-data",
-      "localNotebookPath" : "notebooks/SparkSpannerBenchmark.scala",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmarkNotebook.scala",
       "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
-      "numPartitions": 4,
+      "numPartitions": 800,
       "numRecords": 100000000
+    },
+    {
+      "name": "databricks-200mil-records",
+      "description": "A 200mil record write test on Databricks using a source table.",
+      "environment": "databricks",
+      "dataSource": "generated-data",
+      "localNotebookPath" : "notebooks/SparkSpannerBenchmarkNotebook.scala",
+      "localPrepareNotebookPath" : "notebooks/PrepareSource.scala",
+      "numPartitions": 1600,
+      "numRecords": 200000000,
+      "assumeIdempotentRows": true
     }
   ]
 }

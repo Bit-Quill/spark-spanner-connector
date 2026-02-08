@@ -62,7 +62,6 @@ object SparkSpannerWriteBenchmark {
     val numPartitions = (config \ "numPartitions").asOpt[Int].getOrElse(defaultPartitions)
 
     val spark = SparkSession.builder().appName("SparkSpannerWriteBenchmark").getOrCreate()
-    import spark.implicits._
 
     val generateUUID = udf(() => UUID.randomUUID().toString)
 
@@ -89,7 +88,7 @@ object SparkSpannerWriteBenchmark {
     println(f"Average row size: $averageRowSizeBytes bytes")
     println(s"Number of partitions: $numPartitions")
 
-    val dfPartitioned = dfWrite.repartitionByRange(numPartitions, col("id")).sortWithinPartitions(col("id"))
+    val dfPartitioned = dfWrite.repartition(numPartitions).sortWithinPartitions(col("id"))
 
     println(s"Beginning write to table '$writeTable' with mutationsPerTransaction: $mutationsPerTransaction")
     val startTime = System.nanoTime()
@@ -120,7 +119,7 @@ object SparkSpannerWriteBenchmark {
     val runId = UUID.randomUUID().toString.take(8)
     val runTimestamp = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.now())
     val sparkVersion = spark.version
-    val connectorVersion = "0.1.0" // TODO: Get this from the build
+    val connectorVersion = "0.1.0"
 
     val resultJson = Json.obj(
       "runId" -> runId,
