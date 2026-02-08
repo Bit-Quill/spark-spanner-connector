@@ -117,11 +117,44 @@ As long as the cluster's service account has the necessary IAM permissions for S
 
 ### Databricks
 
-When running on Databricks, authentication to Google Cloud Spanner is handled by the Databricks Spark connector using credentials provisioned to the cluster.
+Authentication for both Google Cloud Spanner and Google Cloud Storage is handled via a single service account, provisioned to the cluster using an init script. This provides a unified and secure way to grant GCP access to your Databricks jobs.
 
-**For GCS Access**: The `SparkSpannerBenchmark.scala` notebook is configured to use Application Default Credentials (ADC) for writing results to Google Cloud Storage. You *must* ensure that the `application_default_credentials.json` file is present on each worker node's filesystem at the exact path `/root/.config/gcloud/application_default_credentials.json`. This file should contain the JSON key for a service account with `roles/storage.objectAdmin` or equivalent permissions for your results bucket.
+#### 1. Create a Databricks Secret
 
-**For Spanner Access**: Ensure your Databricks cluster is configured to authenticate to Spanner. This typically involves setting up service account credentials directly within your Databricks cluster configuration or secrets, and providing them to the Spark Spanner connector options (e.g., `projectId`, `instanceId`, `databaseId`, etc., which implicitly assume an authenticated environment).
+First, you need to store your GCP service account's JSON key file in a Databricks secret.
+
+1.  Create a secret scope. For example, `gcp-credentials`.
+    ```bash
+    databricks secrets create-scope gcp-credentials
+    ```
+2.  Store your service account key in the scope. Let's call the secret `spanner-benchmark-sa`.
+    ```bash
+    databricks secrets put-secret gcp-credentials spanner-benchmark-sa --json-file /path/to/your/service-account.json
+    ```
+
+#### 2. Configure the Cluster Init Script
+
+The `benchmark/setup_gcp_credentials.sh` script is designed to run as a cluster-scoped init script. It reads the secret you just created and installs it as the Application Default Credentials (ADC) file on each node in the cluster.
+
+1.  **Upload the init script**: Upload `benchmark/setup_gcp_credentials.sh` to a location on your Databricks workspace or DBFS (e.g., `dbfs:/databricks/init_scripts/setup_gcp_credentials.sh`).
+2.  **Configure the cluster**: In your Databricks cluster configuration, navigate to "Advanced Options" -> "Init Scripts". Add the path to the script you just uploaded.
+3.  **Set Environment Variables**: In the same cluster configuration, under "Advanced Options" -> "Spark", set the following environment variable. This tells the init script which secret to read.
+    ```
+    GCP_CREDENTIALS={{secrets/gcp-credentials/spanner-benchmark-sa}}
+    ```
+    Replace `gcp-credentials` and `spanner-benchmark-sa` with the scope and secret name you created in step 1.
+
+When the cluster starts, the init script will run on every node, creating the file `/root/.config/gcloud/application_default_credentials.json`. The Spark Spanner connector and GCS connector will automatically pick up and use these credentials.
+
+#### 3. Required GCP IAM Roles
+
+The service account you use must have permissions to access both Spanner and the GCS bucket for results. Grant the following roles to your service account on your GCP project:
+
+*   **For Spanner Access**:
+    *   `roles/spanner.databaseUser`: Allows reading from and writing data to Spanner databases.
+    *   `roles/spanner.databaseAdmin`: Required by the setup tasks (`spannerUp`, `createBenchmarkSpannerTable`) to create and manage database schemas.
+*   **For GCS Access**:
+    *   `roles/storage.objectAdmin`: Allows writing benchmark results to your GCS bucket.
 
 ## Benchmarking Workflow
 

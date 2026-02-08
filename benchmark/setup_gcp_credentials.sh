@@ -13,7 +13,7 @@ GCP_CREDENTIALS_CONTENT="$GCP_CREDENTIALS"
 if [ -z "$GCP_CREDENTIALS_CONTENT" ]; then
   echo "Error: The GCP_CREDENTIALS environment variable is not set." >&2
   echo "Please configure this in the Spark Cluster Environment Variables:" >&2
-  echo "GCP_CREDENTIALS={{secrets/improving-credentials/spanner-access}}" >&2
+  echo "GCP_CREDENTIALS={{secrets/gcp-credentials/spanner-benchmark-sa}}" >&2
   exit 1
 fi
 
