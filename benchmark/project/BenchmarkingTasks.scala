@@ -7,7 +7,6 @@ import play.api.libs.json._
 object BenchmarkingTasks {
 
   lazy val buildBenchmarkJar = taskKey[File]("Builds the spanner test suite JAR.")
-  lazy val runDataproc = inputKey[Unit]("Runs the spark job on Google Cloud Dataproc")
   lazy val runDatabricksNotebook = inputKey[Unit]("Runs a notebook on Databricks.")
   lazy val refreshDatabricksToken = inputKey[Unit]("Refreshes the Databricks token.")
   lazy val spannerUp = inputKey[Unit]("Ensures spanner instance, database and table exist for benchmark.")
@@ -635,101 +634,5 @@ object BenchmarkingTasks {
     },
 
       buildBenchmarkJar := (assembly in ThisProject).value,
-
-      runDataproc := {
-      val args: Seq[String] = Def.spaceDelimited("<arg>").parsed
-      if (args.isEmpty) {
-        sys.error("Usage: sbt \"runDataproc <benchmarkName>\"")
-      }
-      val benchmarkName = args.head
-      val baseDir = baseDirectory.value
-      val (benchmarkDef, specificEnvConfig, environmentType) = getBenchmarkContext(benchmarkName, baseDir)
-
-      if (environmentType != "dataproc") {
-        sys.error(s"Benchmark '$benchmarkName' is not a dataproc benchmark. Environment type is '$environmentType'.")
-      }
-
-      val dataSourcesFile = baseDir / "data_sources.json"
-      if (!dataSourcesFile.exists()) {
-        sys.error(s"Data sources file not found at ${dataSourcesFile.getAbsolutePath}.")
-      }
-      val dataSources = (Json.parse(IO.read(dataSourcesFile)) \ "dataSources").as[JsArray]
-
-      val logicalDataSourceName = (benchmarkDef \ "dataSource").asOpt[String]
-      var resolvedSourceTable: Option[String] = None
-
-      logicalDataSourceName.foreach { dsName =>
-        val dataSourceMappings = (specificEnvConfig \ "dataSourceMappings").asOpt[JsObject].getOrElse(Json.obj())
-        resolvedSourceTable = (dataSourceMappings \ dsName).asOpt[String]
-        if (resolvedSourceTable.isEmpty) {
-          sys.error(s"Physical table mapping for logical data source '$dsName' not found in environment.json for environment '$environmentType'.")
-        }
-      }
-
-      val physicalWriteTableName = deriveWriteTableName(benchmarkName)
-      var tempConfig = benchmarkDef.deepMerge(specificEnvConfig)
-      tempConfig = tempConfig - "writeTableName" + ("writeTable" -> Json.toJson(physicalWriteTableName))
-      resolvedSourceTable.foreach(s => tempConfig = tempConfig + ("sourceTable" -> Json.toJson(s)))
-      tempConfig = tempConfig + ("buildSparkVersion" -> Json.toJson(sys.props.get("spark.version").getOrElse("3.3")))
-      
-      val finalMergedConfig = tempConfig
-      val configJsonString = Json.stringify(finalMergedConfig)
-      println(s"Running benchmark with merged configuration: ${configJsonString}")
-
-      val appJar = (assembly in ThisProject).value
-      val mc = (Compile / mainClass).value.getOrElse(throw new RuntimeException("mainClass not found"))
-
-      val cluster = (finalMergedConfig \ "dataprocCluster").as[String]
-      val region = (finalMergedConfig \ "dataprocRegion").as[String]
-      val bucketName = (finalMergedConfig \ "dataprocBucket").as[String]
-      val projectId = (finalMergedConfig \ "projectId").as[String]
-
-      val runId = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.now()) + "_" + java.util.UUID.randomUUID().toString.take(8)
-      val gcsPath = s"gs://$bucketName/connector-test-$runId"
-      
-      val dest = s"$gcsPath/${appJar.getName}"
-      println(s"Uploading ${appJar.getAbsolutePath} to $dest")
-      s"gcloud storage cp ${appJar.getAbsolutePath} $dest".!
-
-      val command = Seq(
-        "gcloud", "dataproc", "jobs", "submit", "spark",
-        s"--cluster=$cluster",
-        s"--region=$region",
-        s"--project=$projectId",
-        s"--class=$mc",
-        s"--jars=$dest",
-        "--"
-      ) ++ Seq(configJsonString)
-
-      println(s"Submitting Dataproc job: ${command.mkString(" ")}")
-      
-      val jobOutput = new StringBuilder
-      val errorOutput = new StringBuilder
-      val exitCode = command.!(ProcessLogger(
-        line => {
-          println(line)
-          jobOutput.append(line).append("\n")
-        },
-        line => {
-          System.err.println(line)
-          errorOutput.append(line).append("\n")
-        }
-      ))
-
-      if (exitCode != 0) {
-        sys.error(s"Dataproc job submission failed with exit code $exitCode.\nStderr:\n${errorOutput.toString}")
-      }
-
-      val resultPathPattern = """Writing results to (gs://[^\s]+)""" .r
-      resultPathPattern.findFirstMatchIn(jobOutput.toString).map(_.group(1)) match {
-        case Some(path) =>
-          println("\n" + ("-" * 50))
-          println("Benchmark Run Complete")
-          println(s"Result file created at: $path")
-          println(("-" * 50) + "\n")
-        case None =>
-          println("\nWarning: Could not automatically find the results file path in the Dataproc job output.")
-      }
-    },
   )
 }
