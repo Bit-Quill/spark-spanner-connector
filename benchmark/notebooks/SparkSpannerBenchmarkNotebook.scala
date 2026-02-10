@@ -102,7 +102,7 @@ dfPartitioned
   .mode(SaveMode.Append)
   .save()
 val endTime = System.nanoTime()
-val durationSeconds = Duration.ofNanos(endTime - startTime).toMillis
+val durationSeconds = Duration.ofNanos(endTime - startTime).toMillis / 1000.0
 val throughput = sizeMb / durationSeconds
 
 println("Ending write")
