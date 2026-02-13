@@ -17,6 +17,8 @@ import com.google.cloud.ByteArray;
 import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Mutation;
+import com.google.cloud.spanner.Struct;
+import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -98,65 +100,55 @@ public class SpannerWriterUtils {
     // Long array
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.LongType,
-        (row, i, type) -> {
-          return arrayConverter(row, i, ArrayData::getLong, Value::int64Array);
-        });
+        (row, i, type) -> arrayConverter(row, i, ArrayData::getLong, Value::int64Array));
 
     // String array
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.StringType,
-        (row, i, type) -> {
-          return arrayConverter(
-              row, i, (a, idx) -> a.getUTF8String(idx).toString(), Value::stringArray);
-        });
+        (row, i, type) ->
+            arrayConverter(
+                row, i, (a, idx) -> a.getUTF8String(idx).toString(), Value::stringArray));
 
     // Boolean
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.BooleanType,
-        (row, i, type) -> {
-          return arrayConverter(row, i, ArrayData::getBoolean, Value::boolArray);
-        });
+        (row, i, type) -> arrayConverter(row, i, ArrayData::getBoolean, Value::boolArray));
 
     // Double
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.DoubleType,
-        (row, i, type) -> {
-          return arrayConverter(row, i, ArrayData::getDouble, Value::float64Array);
-        });
+        (row, i, type) -> arrayConverter(row, i, ArrayData::getDouble, Value::float64Array));
 
     // Binary
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.BinaryType,
-        (row, i, type) -> {
-          return arrayConverter(
-              row, i, (a, idx) -> ByteArray.copyFrom(a.getBinary(idx)), Value::bytesArray);
-        });
+        (row, i, type) ->
+            arrayConverter(
+                row, i, (a, idx) -> ByteArray.copyFrom(a.getBinary(idx)), Value::bytesArray));
 
     // Timestamp
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.TimestampType,
-        (row, i, type) -> {
-          return arrayConverter(
-              row,
-              i,
-              (a, idx) -> Timestamp.ofTimeMicroseconds(a.getLong(idx)),
-              Value::timestampArray);
-        });
+        (row, i, type) ->
+            arrayConverter(
+                row,
+                i,
+                (a, idx) -> Timestamp.ofTimeMicroseconds(a.getLong(idx)),
+                Value::timestampArray));
 
     // Date
     ARRAY_TYPE_CONVERTERS.put(
         DataTypes.DateType,
-        (row, i, type) -> {
-          return arrayConverter(
-              row,
-              i,
-              (a, idx) -> {
-                LocalDate localDate = LocalDate.ofEpochDay(a.getInt(idx));
-                return Date.fromYearMonthDay(
-                    localDate.getYear(), localDate.getMonthValue(), localDate.getDayOfMonth());
-              },
-              Value::dateArray);
-        });
+        (row, i, type) ->
+            arrayConverter(
+                row,
+                i,
+                (a, idx) -> {
+                  LocalDate localDate = LocalDate.ofEpochDay(a.getInt(idx));
+                  return Date.fromYearMonthDay(
+                      localDate.getYear(), localDate.getMonthValue(), localDate.getDayOfMonth());
+                },
+                Value::dateArray));
 
     // Note: DecimalType is handled dynamically in the method below
     // because it relies on instanceof checks rather than strict equality.
@@ -211,6 +203,21 @@ public class SpannerWriterUtils {
     return builder.build();
   }
 
+  private static Struct internalRowToStruct(InternalRow record, StructType schema) {
+    final Struct.Builder builder = Struct.newBuilder();
+
+    for (int i = 0; i < schema.length(); i++) {
+      final StructField field = schema.fields()[i];
+      final DataType fieldType = field.dataType();
+      final String fieldName = field.name();
+
+      Value spannerValue = convertField(record, i, fieldType);
+      builder.set(fieldName).to(spannerValue);
+    }
+
+    return builder.build();
+  }
+
   // Helper method to resolve the strategy
   private static Value convertField(InternalRow row, int index, DataType type) {
     // Check exact matches
@@ -229,6 +236,12 @@ public class SpannerWriterUtils {
       return Value.numeric(bd);
     }
 
+    if (type instanceof StructType) {
+      StructType structType = (StructType) type;
+      return Value.struct(
+          internalRowToStruct(row.getStruct(index, structType.length()), structType));
+    }
+
     if (type instanceof ArrayType) {
       ArrayType arrayType = (ArrayType) type;
       DataType elementType = arrayType.elementType();
@@ -245,8 +258,33 @@ public class SpannerWriterUtils {
             (ad, i) -> ad.getDecimal(i, dt.precision(), dt.scale()).toJavaBigDecimal(),
             Value::numericArray);
       }
+
+      if (elementType instanceof StructType) {
+        StructType structType = (StructType) elementType;
+
+        if (row.isNullAt(index)) {
+          return Value.struct(Type.struct(), null); // TODO: this may not be correct type.
+        }
+
+        final ArrayData arrayData = row.getArray(index);
+        final int numElements = arrayData.numElements();
+        List<Struct> convertedList = new ArrayList<>(numElements);
+
+        for (int j = 0; j < numElements; j++) {
+          if (arrayData.isNullAt(j)) {
+            convertedList.add(null);
+          } else {
+            // Uses specialized Spark getters (getLong, getDouble, etc.)
+            convertedList.add(
+                internalRowToStruct(row.getStruct(index, structType.length()), structType));
+          }
+        }
+
+        return Value.structArray(
+            Type.struct(), convertedList); // TODO: very dodgy code for spanner type
+      }
     }
-    // TODO handle Struct here.
+
     // unsupported type
     throw new UnsupportedOperationException("Unsupported Spark DataType: " + type);
   }
