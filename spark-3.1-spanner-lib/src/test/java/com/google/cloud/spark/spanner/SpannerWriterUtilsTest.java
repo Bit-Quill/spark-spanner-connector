@@ -21,6 +21,8 @@ import com.google.cloud.ByteArray;
 import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Mutation;
+import com.google.cloud.spanner.Struct;
+import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -143,6 +145,7 @@ public class SpannerWriterUtilsTest {
             {"timestamp", DataTypes.TimestampType, Value.timestamp(null)},
             {"date", DataTypes.DateType, Value.date(null)},
             {"decimal", new DecimalType(38, 9), Value.numeric(null)},
+            {"struct", new StructType(), Value.struct(Struct.newBuilder().build())},
             {
               "long_array",
               DataTypes.createArrayType(DataTypes.LongType),
@@ -174,6 +177,11 @@ public class SpannerWriterUtilsTest {
               "decimal_array",
               DataTypes.createArrayType(new DecimalType(38, 9)),
               Value.numericArray(null)
+            },
+            {
+              "struct_array",
+              DataTypes.createArrayType(new StructType()),
+              Value.structArray(Type.struct(), null)
             }
           });
     }
@@ -341,6 +349,30 @@ public class SpannerWriterUtilsTest {
                           ad,
                           (Decimal[]) d,
                           (i, val) -> when(ad.getDecimal(i, 38, 9)).thenReturn((Decimal) val))
+            },
+
+            // 9. Struct Array
+            {
+              "struct_array",
+              new StructType()
+                  .add(
+                      "field",
+                      DataTypes.StringType), // Add at least one field to match getStruct(i, 1)
+              new InternalRow[] {
+                mock(InternalRow.class)
+              }, // Use InternalRow instead of Spanner Struct
+              Value.structArray(
+                  Type.struct(Type.StructField.of("field", Type.string())),
+                  Collections.singletonList(Struct.newBuilder().set("field").to("value").build())),
+              (BiConsumer<ArrayData, Object>)
+                  (ad, d) ->
+                      setupArrayMock(
+                          ad,
+                          (InternalRow[]) d, // Cast to InternalRow array
+                          (i, val) -> {
+                            when(ad.getStruct(i, 1)).thenReturn((InternalRow) val);
+                            when(((InternalRow) val).getString(0)).thenReturn("value");
+                          })
             }
           });
     }
@@ -365,10 +397,10 @@ public class SpannerWriterUtilsTest {
       InternalRow row = mock(InternalRow.class);
       ArrayData arrayData = mock(ArrayData.class);
 
-      when(row.isNullAt(0)).thenReturn(false);
+      when(row.isNullAt(0)).thenReturn(false).thenReturn(false);
       when(row.getArray(0)).thenReturn(arrayData);
 
-      // Executes the specific stubbing (e.g., ad.toLongArray() or ad.toIntArray())
+      // Executes the specific stubbing (e.g., ad.toLongArray(), ad.toIntArray(), ad.to)
       mockSetup.accept(arrayData, inputData);
 
       Mutation mutation = SpannerWriterUtils.internalRowToMutation(TABLE_NAME, row, schema);
@@ -376,5 +408,10 @@ public class SpannerWriterUtilsTest {
       Assert.assertEquals(
           "Failure on type: " + colName, expectedValue, mutation.asMap().get(colName));
     }
+  }
+
+  @Test
+  public void testStructConversion() {
+    // TODO: add test
   }
 }

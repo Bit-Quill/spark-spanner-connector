@@ -263,7 +263,7 @@ public class SpannerWriterUtils {
         StructType structType = (StructType) elementType;
 
         if (row.isNullAt(index)) {
-          return Value.struct(Type.struct(), null); // TODO: this may not be correct type.
+          return Value.structArray(Type.struct(), null);
         }
 
         final ArrayData arrayData = row.getArray(index);
@@ -276,12 +276,14 @@ public class SpannerWriterUtils {
           } else {
             // Uses specialized Spark getters (getLong, getDouble, etc.)
             convertedList.add(
-                internalRowToStruct(row.getStruct(index, structType.length()), structType));
+                internalRowToStruct(arrayData.getStruct(j, structType.length()), structType));
           }
         }
 
         return Value.structArray(
-            Type.struct(), convertedList); // TODO: very dodgy code for spanner type
+            Type.struct(Type.StructField.of("field", Type.string())),
+            convertedList); // TODO: the struct element type should represent the schema of the
+        // struct.
       }
     }
 
