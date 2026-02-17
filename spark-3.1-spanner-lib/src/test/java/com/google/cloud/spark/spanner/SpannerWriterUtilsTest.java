@@ -355,23 +355,31 @@ public class SpannerWriterUtilsTest {
             {
               "struct_array",
               new StructType()
-                  .add(
-                      "field",
-                      DataTypes.StringType), // Add at least one field to match getStruct(i, 1)
+                  .add("str_field", DataTypes.StringType)
+                  .add("bool_field", DataTypes.BooleanType),
               new InternalRow[] {
                 mock(InternalRow.class)
               }, // Use InternalRow instead of Spanner Struct
               Value.structArray(
-                  Type.struct(Type.StructField.of("field", Type.string())),
-                  Collections.singletonList(Struct.newBuilder().set("field").to("value").build())),
+                  Type.struct(
+                      Type.StructField.of("str_field", Type.string()),
+                      Type.StructField.of("bool_field", Type.bool())),
+                  Collections.singletonList(
+                      Struct.newBuilder()
+                          .set("str_field")
+                          .to("str_value")
+                          .set("bool_field")
+                          .to(true)
+                          .build())),
               (BiConsumer<ArrayData, Object>)
                   (ad, d) ->
                       setupArrayMock(
                           ad,
                           (InternalRow[]) d, // Cast to InternalRow array
                           (i, val) -> {
-                            when(ad.getStruct(i, 1)).thenReturn((InternalRow) val);
-                            when(((InternalRow) val).getString(0)).thenReturn("value");
+                            when(ad.getStruct(i, 2)).thenReturn((InternalRow) val);
+                            when(((InternalRow) val).getString(0)).thenReturn("str_value");
+                            when(((InternalRow) val).getBoolean(1)).thenReturn(true);
                           })
             }
           });
@@ -397,7 +405,7 @@ public class SpannerWriterUtilsTest {
       InternalRow row = mock(InternalRow.class);
       ArrayData arrayData = mock(ArrayData.class);
 
-      when(row.isNullAt(0)).thenReturn(false).thenReturn(false);
+      when(row.isNullAt(0)).thenReturn(false);
       when(row.getArray(0)).thenReturn(arrayData);
 
       // Executes the specific stubbing (e.g., ad.toLongArray(), ad.toIntArray(), ad.to)

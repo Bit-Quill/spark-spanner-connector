@@ -237,6 +237,9 @@ public class SpannerWriterUtils {
     }
 
     if (type instanceof StructType) {
+      if (row.isNullAt(index)) {
+        return Value.struct(Struct.newBuilder().build());
+      }
       StructType structType = (StructType) type;
       return Value.struct(
           internalRowToStruct(row.getStruct(index, structType.length()), structType));
@@ -268,6 +271,7 @@ public class SpannerWriterUtils {
 
         final ArrayData arrayData = row.getArray(index);
         final int numElements = arrayData.numElements();
+        if (numElements == 0) return Value.structArray(Type.struct(), null);
         List<Struct> convertedList = new ArrayList<>(numElements);
 
         for (int j = 0; j < numElements; j++) {
@@ -280,10 +284,7 @@ public class SpannerWriterUtils {
           }
         }
 
-        return Value.structArray(
-            Type.struct(Type.StructField.of("field", Type.string())),
-            convertedList); // TODO: the struct element type should represent the schema of the
-        // struct.
+        return Value.structArray(convertedList.get(0).getType(), convertedList);
       }
     }
 
