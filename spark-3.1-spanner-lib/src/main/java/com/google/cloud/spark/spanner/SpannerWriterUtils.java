@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
@@ -238,9 +239,11 @@ public class SpannerWriterUtils {
     }
 
     if (type instanceof StructType) {
+      // A Struct instance in Spanner always represents a non-NULL value.
       if (row.isNullAt(index)) {
-        return Value.struct(Struct.newBuilder().build());
+        return Value.struct(Struct.newBuilder().build()); // TODO: How should this be handled.
       }
+
       StructType structType = (StructType) type;
       return Value.struct(
           internalRowToStruct(row.getStruct(index, structType.length()), structType));
@@ -272,7 +275,7 @@ public class SpannerWriterUtils {
 
         final ArrayData arrayData = row.getArray(index);
         final int numElements = arrayData.numElements();
-        if (numElements == 0) return Value.structArray(Type.struct(), null);
+        if (numElements == 0) return Value.structArray(Type.struct(), new ArrayList<>());
         List<Struct> convertedList = new ArrayList<>(numElements);
 
         for (int j = 0; j < numElements; j++) {
@@ -285,7 +288,14 @@ public class SpannerWriterUtils {
           }
         }
 
-        return Value.structArray(convertedList.get(0).getType(), convertedList);
+        // Find Spanner schema from first non-null struct array element.
+        Type itemType =
+            convertedList.stream()
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(Struct::getType)
+                .orElse(Type.struct());
+        return Value.structArray(itemType, convertedList);
       }
     }
 
