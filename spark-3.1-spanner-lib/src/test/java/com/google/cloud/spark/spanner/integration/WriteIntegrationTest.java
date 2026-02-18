@@ -19,6 +19,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.google.cloud.spark.spanner.TestData;
 import java.math.BigDecimal;
@@ -555,5 +556,77 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
   private BigDecimal[] rowToDecimalArray(Row row, int index) {
     final List<BigDecimal> actualList = row.getList(index);
     return actualList.toArray(new BigDecimal[0]);
+  }
+
+  @Test
+  public void testErrorIfExists() {
+
+    // 1. Write initial data.
+
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField("long_col", DataTypes.LongType, false),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+              DataTypes.createStructField("bool_col", DataTypes.BooleanType, true),
+              DataTypes.createStructField("double_col", DataTypes.DoubleType, true),
+              DataTypes.createStructField("timestamp_col", DataTypes.TimestampType, true),
+              DataTypes.createStructField("date_col", DataTypes.DateType, true),
+              DataTypes.createStructField("bytes_col", DataTypes.BinaryType, true),
+              DataTypes.createStructField("numeric_col", DataTypes.createDecimalType(38, 9), true),
+            });
+
+    List<Row> initialRows =
+        Collections.singletonList(
+            RowFactory.create(
+                301L,
+                "three-oh-one",
+                true,
+                3.14,
+                java.sql.Timestamp.valueOf("2023-03-03 03:03:03"),
+                java.sql.Date.valueOf("2023-03-03"),
+                new byte[] {1, 2, 3},
+                new java.math.BigDecimal("3.14")));
+
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, schema);
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+
+    props.put("table", TestData.WRITE_TABLE_NAME + "_EIE");
+
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+    // 2. Try to write again with ErrorIfExists.
+
+    List<Row> newRows =
+        Collections.singletonList(
+            RowFactory.create(
+                302L,
+                "three-oh-two",
+                false,
+                6.28,
+                java.sql.Timestamp.valueOf("2023-06-06 06:06:06"),
+                java.sql.Date.valueOf("2023-06-06"),
+                new byte[] {4, 5, 6},
+                new java.math.BigDecimal("6.28")));
+
+    Dataset<Row> newDf = spark.createDataFrame(newRows, schema);
+
+    try {
+
+      newDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+      fail("Expected AnalysisException was not thrown");
+
+    } catch (Exception e) {
+
+      // In Spark 3, this is an AnalysisException.
+
+      // For now, let's just check the message.
+
+      assertTrue(
+          "Expected exception message about table already exists, but got: " + e.getMessage(),
+          e.getMessage().contains("already exists"));
+    }
   }
 }
