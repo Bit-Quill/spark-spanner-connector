@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.function.BiConsumer;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
@@ -58,6 +59,8 @@ public class SpannerWriterUtilsTest {
   @RunWith(Parameterized.class)
   public static class ScalarTests {
     private static final byte[] BYTE_DATA = {95, -10, 127};
+    private static final Object[] structValues =
+        new Object[] {UTF8String.fromString("str_value"), true};
 
     // Parameters for each test case: [ColumnName, DataType, MockValue, ExpectedSpannerValue]
     @Parameters(name = "Testing {0}")
@@ -65,7 +68,7 @@ public class SpannerWriterUtilsTest {
       return Arrays.asList(
           new Object[][] {
             {"long", DataTypes.LongType, 100L, Value.int64(100L)},
-            {"string", DataTypes.StringType, "Hello", Value.string("Hello")},
+            {"string", DataTypes.StringType, UTF8String.fromString("Hello"), Value.string("Hello")},
             {"boolean", DataTypes.BooleanType, true, Value.bool(true)},
             {"double", DataTypes.DoubleType, 95.5, Value.float64(95.5)},
             {"binary", DataTypes.BinaryType, BYTE_DATA, Value.bytes(ByteArray.copyFrom(BYTE_DATA))},
@@ -76,7 +79,24 @@ public class SpannerWriterUtilsTest {
               Value.timestamp(Timestamp.ofTimeMicroseconds(1704067200000000L))
             },
             {"dt", DataTypes.DateType, 19723, Value.date(Date.fromYearMonthDay(2024, 1, 1))},
-            {"decimal", new DecimalType(38, 9), decimal, Value.numeric(jbd)}
+            {"decimal", new DecimalType(38, 9), decimal, Value.numeric(jbd)},
+            {
+              "struct",
+              new StructType()
+                  .add("str_field", DataTypes.StringType)
+                  .add("bool_field", DataTypes.BooleanType),
+              new GenericInternalRow(structValues),
+              Value.struct(
+                  Type.struct(
+                      Type.StructField.of("str_field", Type.string()),
+                      Type.StructField.of("bool_field", Type.bool())),
+                  Struct.newBuilder()
+                      .set("str_field")
+                      .to("str_value")
+                      .set("bool_field")
+                      .to(true)
+                      .build())
+            }
           });
     }
 
@@ -104,7 +124,7 @@ public class SpannerWriterUtilsTest {
       // Setup specific getter based on type
       if (sparkType == DataTypes.LongType) when(row.getLong(0)).thenReturn((Long) mockValue);
       else if (sparkType == DataTypes.StringType)
-        when(row.getString(0)).thenReturn((String) mockValue);
+        when(row.getUTF8String(0)).thenReturn((UTF8String) mockValue);
       else if (sparkType == DataTypes.BooleanType)
         when(row.getBoolean(0)).thenReturn((Boolean) mockValue);
       else if (sparkType == DataTypes.DoubleType)
@@ -116,6 +136,8 @@ public class SpannerWriterUtilsTest {
       else if (sparkType == DataTypes.DateType) when(row.getInt(0)).thenReturn((int) mockValue);
       else if (sparkType instanceof DecimalType)
         when(row.getDecimal(0, 38, 9)).thenReturn((Decimal) mockValue);
+      else if (sparkType instanceof StructType)
+        when(row.getStruct(0, 2)).thenReturn((InternalRow) mockValue);
 
       // 3. Execute
       com.google.cloud.spanner.Mutation mutation =
@@ -378,7 +400,8 @@ public class SpannerWriterUtilsTest {
                           (InternalRow[]) d, // Cast to InternalRow array
                           (i, val) -> {
                             when(ad.getStruct(i, 2)).thenReturn((InternalRow) val);
-                            when(((InternalRow) val).getString(0)).thenReturn("str_value");
+                            when(((InternalRow) val).getUTF8String(0))
+                                .thenReturn(UTF8String.fromString("str_value"));
                             when(((InternalRow) val).getBoolean(1)).thenReturn(true);
                           })
             }

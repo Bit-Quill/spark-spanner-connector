@@ -57,7 +57,8 @@ public class SpannerWriterUtils {
     // String
     TYPE_CONVERTERS.put(
         DataTypes.StringType,
-        (row, i, type) -> row.isNullAt(i) ? Value.string(null) : Value.string(row.getString(i)));
+        (row, i, type) ->
+            row.isNullAt(i) ? Value.string(null) : Value.string(row.getUTF8String(i).toString()));
 
     // Boolean
     TYPE_CONVERTERS.put(
