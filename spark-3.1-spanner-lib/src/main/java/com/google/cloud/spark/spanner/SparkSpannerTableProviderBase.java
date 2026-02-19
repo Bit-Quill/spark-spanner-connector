@@ -16,6 +16,8 @@ package com.google.cloud.spark.spanner;
 
 import com.google.cloud.spark.spanner.graph.SpannerGraphBuilder;
 import java.util.Map;
+import org.apache.spark.sql.connector.catalog.Identifier;
+import org.apache.spark.sql.connector.catalog.SupportsCatalogOptions;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableProvider;
 import org.apache.spark.sql.connector.expressions.Transform;
@@ -23,7 +25,8 @@ import org.apache.spark.sql.sources.DataSourceRegister;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
-public abstract class SparkSpannerTableProviderBase implements DataSourceRegister, TableProvider {
+public abstract class SparkSpannerTableProviderBase
+    implements SupportsCatalogOptions, DataSourceRegister, TableProvider {
 
   /*
    * Infers the schema of the table identified by the given options.
@@ -91,5 +94,22 @@ public abstract class SparkSpannerTableProviderBase implements DataSourceRegiste
           SpannerErrorCode.INVALID_ARGUMENT,
           "properties must contain one of \"table\" or \"graph\"");
     }
+  }
+
+  @Override
+  public Identifier extractIdentifier(CaseInsensitiveStringMap options) {
+    String projectId = options.get("projectId");
+    String instanceId = options.get("instanceId");
+    String databaseId = options.get("databaseId");
+    String table = options.get("table");
+    if (table == null) {
+      return null;
+    }
+    return Identifier.of(new String[] {projectId, instanceId, databaseId}, table);
+  }
+
+  @Override
+  public String extractCatalog(CaseInsensitiveStringMap options) {
+    return options.getOrDefault("catalog", "spanner");
   }
 }

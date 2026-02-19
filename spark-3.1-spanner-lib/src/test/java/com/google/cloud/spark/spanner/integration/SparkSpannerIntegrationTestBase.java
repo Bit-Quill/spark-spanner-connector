@@ -54,6 +54,7 @@ public class SparkSpannerIntegrationTestBase extends SpannerTestBase {
           SparkSession.builder()
               .master("local")
               .config("spark.ui.enabled", "false")
+              .config("spark.sql.catalog.spanner", "com.google.cloud.spark.spanner.SpannerCatalog")
               .config("spark.default.parallelism", 20)
               .getOrCreate();
       // reducing test's logs

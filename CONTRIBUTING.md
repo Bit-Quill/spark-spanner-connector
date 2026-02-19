@@ -96,7 +96,7 @@ The integration tests are configured through the following environment variables
 
 #### Running Specific Tests
 
-You can run a single integration test class or a specific test method using Maven. 
+You can run a single integration test class or a specific test method using Maven.
 
 To run all tests in `Spark31WriteIntegrationTest`, which is in the `spark-3.1-spanner-lib` module:
 ```bash
