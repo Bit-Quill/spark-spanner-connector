@@ -125,16 +125,24 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
             new StructField[] {
               DataTypes.createStructField("long_col", DataTypes.LongType, false),
               DataTypes.createStructField("string_col", DataTypes.StringType, true),
+              DataTypes.createStructField("bool_col", DataTypes.BooleanType, true),
+              DataTypes.createStructField("double_col", DataTypes.DoubleType, true),
+              DataTypes.createStructField("timestamp_col", DataTypes.TimestampType, true),
+              DataTypes.createStructField("date_col", DataTypes.DateType, true),
+              DataTypes.createStructField("bytes_col", DataTypes.BinaryType, true),
+              DataTypes.createStructField("numeric_col", DataTypes.createDecimalType(38, 9), true),
             });
 
-    List<Row> rows = Arrays.asList(RowFactory.create(4L, "four"), RowFactory.create(5L, "five"));
+    List<Row> rows =
+        Arrays.asList(
+            RowFactory.create(4L, "four", null, null, null, null, null, null),
+            RowFactory.create(5L, "five", null, null, null, null, null, null));
 
     Dataset<Row> df = spark.createDataFrame(rows, schema);
 
     Map<String, String> props = connectionProperties(usePostgresSql);
     props.put("table", TestData.WRITE_TABLE_NAME);
     props.put("assumeIdempotentWrites", "true");
-    props.put("enablePartialRowUpdates", "true");
 
     df.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
 
@@ -159,6 +167,12 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
             new StructField[] {
               DataTypes.createStructField("long_col", DataTypes.LongType, false),
               DataTypes.createStructField("string_col", DataTypes.StringType, true),
+              DataTypes.createStructField("bool_col", DataTypes.BooleanType, true),
+              DataTypes.createStructField("double_col", DataTypes.DoubleType, true),
+              DataTypes.createStructField("timestamp_col", DataTypes.TimestampType, true),
+              DataTypes.createStructField("date_col", DataTypes.DateType, true),
+              DataTypes.createStructField("bytes_col", DataTypes.BinaryType, true),
+              DataTypes.createStructField("numeric_col", DataTypes.createDecimalType(38, 9), true)
             });
 
     Dataset<Row> df = spark.createDataFrame(Collections.emptyList(), schema);
