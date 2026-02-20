@@ -36,6 +36,7 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.DecimalType;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.junit.Test;
@@ -270,6 +271,28 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
   @Test
   public void testWrite() {
+    final StructType childStructType =
+        new StructType()
+            .add("long_field", DataTypes.LongType)
+            .add("str_field", DataTypes.StringType)
+            .add("bool_field", DataTypes.BooleanType)
+            .add("double_field", DataTypes.DoubleType)
+            .add("binary_field", DataTypes.BinaryType)
+            .add("ts_field", DataTypes.TimestampType)
+            .add("dt_field", DataTypes.DateType)
+            .add("decimal_field", new DecimalType(38, 9));
+
+    Row childRow =
+        RowFactory.create(
+            100L,
+            "str_value",
+            true,
+            95.5,
+            new byte[] {1, 2, 3},
+            1704067200000000L,
+            19723,
+            new java.math.BigDecimal("123.456"));
+
     StructType schema =
         new StructType(
             new StructField[] {
@@ -281,6 +304,7 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
               DataTypes.createStructField("date_col", DataTypes.DateType, true),
               DataTypes.createStructField("bytes_col", DataTypes.BinaryType, true),
               DataTypes.createStructField("numeric_col", DataTypes.createDecimalType(38, 9), true),
+              DataTypes.createStructField("struct_col", childStructType, true),
             });
 
     List<Row> rows =
@@ -293,7 +317,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
                 java.sql.Timestamp.valueOf("2023-01-01 10:10:10"),
                 java.sql.Date.valueOf("2023-01-01"),
                 new byte[] {1, 2, 3},
-                new java.math.BigDecimal("123.456")),
+                new java.math.BigDecimal("123.456"),
+                childRow),
             RowFactory.create(
                 102L,
                 "two",
@@ -302,12 +327,14 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
                 java.sql.Timestamp.valueOf("2023-02-02 20:20:20"),
                 java.sql.Date.valueOf("2023-02-02"),
                 new byte[] {4, 5, 6},
-                new java.math.BigDecimal("789.012")));
+                new java.math.BigDecimal("789.012"),
+                childRow));
 
     Dataset<Row> df = spark.createDataFrame(rows, schema);
 
     Map<String, String> props = connectionProperties(usePostgresSql);
-    props.put("table", TestData.WRITE_TABLE_NAME);
+    //    props.put("table", TestData.WRITE_TABLE_NAME);
+    props.put("table", "write_struct_test_table");
 
     df.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
 
@@ -328,6 +355,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     assertThat(row1.getDate(5)).isEqualTo(java.sql.Date.valueOf("2023-01-01"));
     assertThat(row1.<byte[]>getAs(6)).isEqualTo(new byte[] {1, 2, 3});
     assertThat(row1.getDecimal(7).compareTo(new java.math.BigDecimal("123.456"))).isEqualTo(0);
+    Row row1child = row1.getStruct(8);
+    assertThat(row1child.getLong(0)).isEqualTo(100L);
 
     Row row2 = writtenRows.get(102L);
     assertThat(row2.getString(1)).isEqualTo("two");

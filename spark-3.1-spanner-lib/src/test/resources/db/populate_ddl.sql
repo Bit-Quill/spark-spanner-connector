@@ -114,6 +114,18 @@ CREATE TABLE write_test_table (
     numeric_col NUMERIC
     ) PRIMARY KEY(long_col);
 
+CREATE TABLE write_struct_test_table (
+    long_col INT64,
+    string_col STRING(MAX),
+    bool_col BOOL,
+    double_col FLOAT64,
+    timestamp_col TIMESTAMP,
+    date_col DATE,
+    bytes_col BYTES(MAX),
+    numeric_col NUMERIC,
+    struct_col STRUCT<long_field INT64, str_field STRING(MAX), bool_field BOOL, double_field FLOAT64, binary_field BYTES(MAX), ts_field TIMESTAMP, dt_field DATE, decimal_field NUMERIC>
+    ) PRIMARY KEY(long_col);
+
 CREATE TABLE write_array_test_table (
     long_col INT64,
     string_col STRING(MAX),
