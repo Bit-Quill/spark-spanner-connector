@@ -14,13 +14,17 @@
 
 package com.google.cloud.spark.spanner;
 
+import com.google.api.gax.longrunning.OperationFuture;
+import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadContext;
 import com.google.cloud.spanner.Spanner;
+import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
@@ -31,6 +35,8 @@ import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
 import org.apache.spark.sql.connector.expressions.Transform;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
@@ -114,13 +120,114 @@ public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
   public Table createTable(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws TableAlreadyExistsException {
-    // Check if table exists
     if (tableExists(ident)) {
       throw new TableAlreadyExistsException(ident);
     }
-    // TODO: Implement actual table creation logic using Spanner DDL
-    // For now, just return a SpannerTable
+
+    String projectId = ident.namespace()[0];
+    String instanceId = ident.namespace()[1];
+    String databaseId = ident.namespace()[2];
+
+    DatabaseClient dbClient =
+        spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
+    Dialect dialect = dbClient.getDialect();
+    String ddl = toDdl(ident, schema, properties, dialect);
+
+    DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
+    OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
+        dbAdminClient.updateDatabaseDdl(
+            instanceId, databaseId, Collections.singletonList(ddl), null);
+
+    try {
+      op.get();
+    } catch (ExecutionException | InterruptedException e) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.DDL_EXCEPTION,
+          "Exception while creating table " + ident.name() + ": " + e.getMessage(),
+          e);
+    }
+
     return factorySpannerTable(ident);
+  }
+
+  private String toDdl(
+      Identifier ident, StructType schema, Map<String, String> properties, Dialect dialect) {
+    StringBuilder ddl = new StringBuilder();
+    ddl.append("CREATE TABLE ").append(ident.name()).append(" (");
+    for (StructField field : schema.fields()) {
+      ddl.append(field.name()).append(" ").append(sparkTypeToSpannerType(field, dialect));
+      if (!field.nullable()) {
+        ddl.append(" NOT NULL");
+      }
+      ddl.append(", ");
+    }
+    String primaryKey = properties.get("primaryKey");
+    if (primaryKey == null || primaryKey.isEmpty()) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.INVALID_ARGUMENT, "primaryKey must be specified in properties");
+    }
+    ddl.append("PRIMARY KEY (").append(primaryKey).append(")");
+    ddl.append(")");
+    return ddl.toString();
+  }
+
+  private String sparkTypeToSpannerType(StructField field, Dialect dialect) {
+    if (dialect == Dialect.POSTGRESQL) {
+      if (field.dataType().equals(DataTypes.LongType)) {
+        return "bigint";
+      }
+      if (field.dataType().equals(DataTypes.StringType)) {
+        return "varchar";
+      }
+      if (field.dataType().equals(DataTypes.BooleanType)) {
+        return "boolean";
+      }
+      if (field.dataType().equals(DataTypes.DoubleType)) {
+        return "double precision";
+      }
+      if (field.dataType().equals(DataTypes.BinaryType)) {
+        return "bytea";
+      }
+      if (field.dataType().equals(DataTypes.TimestampType)) {
+        return "timestamptz";
+      }
+      if (field.dataType().equals(DataTypes.DateType)) {
+        return "date";
+      }
+      if (field.dataType() instanceof org.apache.spark.sql.types.DecimalType) {
+        return "numeric";
+      }
+    }
+
+    // GoogleSQL types
+    if (field.dataType().equals(DataTypes.LongType)) {
+      return "INT64";
+    }
+    if (field.dataType().equals(DataTypes.StringType)) {
+      return "STRING(MAX)";
+    }
+    if (field.dataType().equals(DataTypes.BooleanType)) {
+      return "BOOL";
+    }
+    if (field.dataType().equals(DataTypes.DoubleType)) {
+      return "FLOAT64";
+    }
+    if (field.dataType().equals(DataTypes.BinaryType)) {
+      return "BYTES(MAX)";
+    }
+    if (field.dataType().equals(DataTypes.TimestampType)) {
+      return "TIMESTAMP";
+    }
+    if (field.dataType().equals(DataTypes.DateType)) {
+      return "DATE";
+    }
+    if (field.dataType() instanceof org.apache.spark.sql.types.DecimalType) {
+      return "NUMERIC";
+    }
+
+    throw new SpannerConnectorException(
+        SpannerErrorCode.UNSUPPORTED_DATATYPE,
+        "Unsupported data type in CREATE TABLE: " + field.dataType());
   }
 
   @Override
@@ -155,7 +262,29 @@ public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
 
   @Override
   public boolean dropTable(Identifier ident) {
-    throw new UnsupportedOperationException("DROP TABLE is not supported for SpannerCatalog");
+    if (!tableExists(ident)) {
+      return false;
+    }
+
+    String instanceId = ident.namespace()[1];
+    String databaseId = ident.namespace()[2];
+
+    String ddl = "DROP TABLE " + ident.name();
+
+    DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
+    OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
+        dbAdminClient.updateDatabaseDdl(
+            instanceId, databaseId, Collections.singletonList(ddl), null);
+
+    try {
+      op.get();
+      return true;
+    } catch (ExecutionException | InterruptedException e) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.DDL_EXCEPTION,
+          "Exception while dropping table " + ident.name() + ": " + e.getMessage(),
+          e);
+    }
   }
 
   @Override

@@ -15,16 +15,19 @@
 package com.google.cloud.spark.spanner.integration;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.cloud.spark.spanner.SpannerCatalog;
 import com.google.cloud.spark.spanner.SpannerTable;
+import com.google.cloud.spark.spanner.integration.SparkSpannerIntegrationTestBase;
 import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
@@ -125,5 +128,28 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     Identifier ident =
         Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, "write_test_table");
     assertTrue(catalog.tableExists(ident));
+  }
+
+  @Test
+  public void testCreateTable() throws NoSuchTableException, TableAlreadyExistsException {
+    String tableName = "new_test_table";
+    Identifier ident =
+        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, tableName);
+    StructType schema =
+        new StructType()
+            .add("id", DataTypes.LongType, false)
+            .add("name", DataTypes.StringType, true);
+    Map<String, String> properties = new HashMap<>();
+    properties.put("primaryKey", "id");
+
+    try {
+      catalog.createTable(ident, schema, null, properties);
+      assertTrue(catalog.tableExists(ident));
+      Table loadedTable = catalog.loadTable(ident);
+      assertThat(loadedTable.schema()).isEqualTo(schema);
+    } finally {
+      catalog.dropTable(ident);
+      assertFalse(catalog.tableExists(ident));
+    }
   }
 }
