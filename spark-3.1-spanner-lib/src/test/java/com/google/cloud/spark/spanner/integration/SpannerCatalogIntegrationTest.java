@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.google.cloud.spark.spanner;
+package com.google.cloud.spark.spanner.integration;
 
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
-import com.google.cloud.spark.spanner.integration.SparkSpannerIntegrationTestBase;
+import com.google.cloud.spark.spanner.SpannerCatalog;
+import com.google.cloud.spark.spanner.SpannerTable;
+import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -58,8 +60,7 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
   @Before
   public void setupCatalog() {
     catalog = new SpannerCatalog();
-    catalog.initialize(
-        "spanner", new CaseInsensitiveStringMap(connectionProperties(usePostgresSql)));
+    catalog.initialize("spanner", new CaseInsensitiveStringMap(ImmutableMap.of()));
   }
 
   private String projectId() {
