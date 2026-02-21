@@ -48,7 +48,42 @@ public class SparkSpannerTableProviderBaseTest {
   }
 
   @Test
-  public void testExtractIdentifierWithNoTable() {
+  public void testExtractIdentifierWithGraph() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("graph", "g");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "g"), identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithTableAndGraph() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("table", "t");
+                put("graph", "g");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithNoTableOrGraph() {
     TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
     CaseInsensitiveStringMap options =
         new CaseInsensitiveStringMap(
@@ -76,5 +111,90 @@ public class SparkSpannerTableProviderBaseTest {
     assertEquals("cat", provider.extractCatalog(options));
     CaseInsensitiveStringMap options2 = new CaseInsensitiveStringMap(new HashMap<>());
     assertEquals("spanner", provider.extractCatalog(options2));
+  }
+
+  @Test
+  public void testExtractIdentifierWithPartialNamespace() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("table", "t");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+
+    options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("table", "t");
+              }
+            });
+    identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+
+    options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("graph", "g");
+              }
+            });
+    identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierCaseInsensitiveOptions() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+
+    // Test with all lowercase
+    CaseInsensitiveStringMap options1 =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectid", "p");
+                put("instanceid", "i");
+                put("databaseid", "d");
+                put("table", "t");
+              }
+            });
+    Identifier identifier1 = provider.extractIdentifier(options1);
+    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier1);
+
+    // Test with all uppercase
+    CaseInsensitiveStringMap options2 =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("PROJECTID", "p");
+                put("INSTANCEID", "i");
+                put("DATABASEID", "d");
+                put("TABLE", "t");
+              }
+            });
+    Identifier identifier2 = provider.extractIdentifier(options2);
+    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier2);
+
+    // Test with mixed case
+    CaseInsensitiveStringMap options3 =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("prOjectId", "p");
+                put("inStanceId", "i");
+                put("datAbaseId", "d");
+                put("tAble", "t");
+              }
+            });
+    Identifier identifier3 = provider.extractIdentifier(options3);
+    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier3);
   }
 }

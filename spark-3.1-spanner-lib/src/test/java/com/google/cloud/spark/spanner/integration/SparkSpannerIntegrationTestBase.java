@@ -35,7 +35,7 @@ public class SparkSpannerIntegrationTestBase extends SpannerTestBase {
     DataFrameReader reader =
         spark
             .read()
-            .format("cloud-spanner")
+            .format(getDataFrameFormat())
             .option("viewsEnabled", true)
             .option("projectId", props.get("projectId"))
             .option("instanceId", props.get("instanceId"))
@@ -43,6 +43,10 @@ public class SparkSpannerIntegrationTestBase extends SpannerTestBase {
     String emulatorHost = props.get("emulatorHost");
     if (emulatorHost != null) reader = reader.option("emulatorHost", props.get("emulatorHost"));
     return reader;
+  }
+
+  protected String getDataFrameFormat() {
+    return "cloud-spanner";
   }
 
   protected static class SparkFactory extends ExternalResource {

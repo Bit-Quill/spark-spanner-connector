@@ -309,7 +309,9 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   private CaseInsensitiveStringMap copyAndAddOpenLineageDatasetProperties(
       CaseInsensitiveStringMap properties) {
-    Map<String, String> expandedProperties = ImmutableMap.<String, String>builder().putAll(properties)
+    Map<String, String> expandedProperties =
+        ImmutableMap.<String, String>builder()
+            .putAll(properties)
             .put("openlineage.dataset.name", String.format("%s/%s", databaseId, tableName))
             .put("openlineage.dataset.namespace", String.format("%s/%s", projectId, instanceId))
             .put("openlineage.dataset.storageDatasetFacet.storageLayer", "spanner")

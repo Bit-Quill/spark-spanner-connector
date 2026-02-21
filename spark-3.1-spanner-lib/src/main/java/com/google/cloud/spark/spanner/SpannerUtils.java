@@ -193,7 +193,8 @@ public class SpannerUtils {
     return opts.getConnection();
   }
 
-  public static BatchClientWithCloser batchClientFromProperties(CaseInsensitiveStringMap properties) {
+  public static BatchClientWithCloser batchClientFromProperties(
+      CaseInsensitiveStringMap properties) {
     return batchClientFromProperties(properties, defaultSessionPoolOptions);
   }
 

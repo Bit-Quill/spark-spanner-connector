@@ -272,7 +272,6 @@ class SpannerTestBase {
     return new SpannerTable(connectionProperties);
   }
 
-
   protected static SpannerTable getSpannerTable(String tableName, boolean usePostgreSql) {
     Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
     connectionProperties.put("table", tableName);

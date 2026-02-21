@@ -22,7 +22,6 @@ import com.google.cloud.spanner.Partition;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.SpannerException;
 import java.io.IOException;
-import java.util.Map;
 import java.util.Objects;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;

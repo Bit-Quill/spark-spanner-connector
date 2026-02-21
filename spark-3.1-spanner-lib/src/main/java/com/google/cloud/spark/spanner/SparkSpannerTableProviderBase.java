@@ -102,10 +102,19 @@ public abstract class SparkSpannerTableProviderBase
     String instanceId = options.get("instanceId");
     String databaseId = options.get("databaseId");
     String table = options.get("table");
-    if (table == null) {
+    String graph = options.get("graph");
+
+    if (projectId == null || instanceId == null || databaseId == null) {
       return null;
     }
-    return Identifier.of(new String[] {projectId, instanceId, databaseId}, table);
+
+    // table and graph are mutually exclusive.
+    if ((table == null) == (graph == null)) {
+      return null;
+    }
+
+    String name = table != null ? table : graph;
+    return Identifier.of(new String[] {projectId, instanceId, databaseId}, name);
   }
 
   @Override

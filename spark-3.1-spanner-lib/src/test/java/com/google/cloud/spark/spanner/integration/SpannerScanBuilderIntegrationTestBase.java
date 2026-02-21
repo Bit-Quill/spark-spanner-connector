@@ -18,7 +18,6 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 
 import com.google.cloud.spark.spanner.*;
-
 import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -26,7 +25,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
@@ -38,7 +36,6 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.MetadataBuilder;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -118,7 +115,8 @@ public abstract class SpannerScanBuilderIntegrationTestBase extends SpannerTestB
 
   @Test
   public void planInputPartitionsShouldSuccessInSpannerScanBuilder() throws Exception {
-    SpannerScanBuilder spannerScanBuilder = new SpannerScanBuilder(getSpannerTable("ATable", false));
+    SpannerScanBuilder spannerScanBuilder =
+        new SpannerScanBuilder(getSpannerTable("ATable", false));
     SpannerScanner ss = ((SpannerScanner) spannerScanBuilder.build());
     InputPartition[] partitions = ss.planInputPartitions();
     PartitionReaderFactory prf = ss.createReaderFactory();
@@ -192,7 +190,8 @@ public abstract class SpannerScanBuilderIntegrationTestBase extends SpannerTestB
           "planInputPartitionsShouldSucceedInSpannerScanBuilderPg is skipped since pg is not supported in Spanner emulator");
       return;
     }
-    SpannerScanBuilder spannerScanBuilder = new SpannerScanBuilder(getSpannerTable("composite_table", true));
+    SpannerScanBuilder spannerScanBuilder =
+        new SpannerScanBuilder(getSpannerTable("composite_table", true));
     SpannerScanner ss = ((SpannerScanner) spannerScanBuilder.build());
     InputPartition[] partitions = ss.planInputPartitions();
     PartitionReaderFactory prf = ss.createReaderFactory();
