@@ -134,18 +134,22 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     String tableName = "new_test_table";
     Identifier ident =
         Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, tableName);
-    StructType schema =
+    StructType createSchema =
         new StructType()
-            .add("id", DataTypes.LongType, false)
+            .add("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA)
             .add("name", DataTypes.StringType, true);
     Map<String, String> properties = new HashMap<>();
-    properties.put("primaryKey", "id");
 
     try {
-      catalog.createTable(ident, schema, null, properties);
+      catalog.createTable(ident, createSchema, null, properties);
       assertTrue(catalog.tableExists(ident));
       Table loadedTable = catalog.loadTable(ident);
-      assertThat(loadedTable.schema()).isEqualTo(schema);
+      // Connector currently does not retrieve primary key metadata.
+      StructType expectedSchema =
+          new StructType()
+              .add("id", DataTypes.LongType, false)
+              .add("name", DataTypes.StringType, true);
+      assertThat(loadedTable.schema()).isEqualTo(expectedSchema);
     } finally {
       catalog.dropTable(ident);
       assertFalse(catalog.tableExists(ident));

@@ -23,8 +23,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.google.cloud.spanner.*;
-import com.google.common.collect.ImmutableMap;
+import com.google.cloud.spanner.DatabaseClient;
+import com.google.cloud.spanner.DatabaseId;
+import com.google.cloud.spanner.Dialect;
+import com.google.cloud.spanner.ReadContext;
+import com.google.cloud.spanner.Spanner;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,6 +38,7 @@ import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
@@ -70,7 +74,7 @@ public class SpannerCatalogTest {
   }
 
   @Before
-  public void setUp() throws Exception {
+  public void setUp() {
     MockitoAnnotations.openMocks(this);
 
     catalog =
@@ -188,14 +192,69 @@ public class SpannerCatalogTest {
   }
 
   @Test
+  public void createTableShouldThrowExceptionOnNoPrimaryKey() throws TableAlreadyExistsException {
+    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "no_pk_table");
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              new StructField("id", DataTypes.LongType, false, Metadata.empty()),
+              new StructField("name", DataTypes.StringType, true, Metadata.empty())
+            });
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
+        .thenReturn(false);
+
+    thrown.expect(SpannerConnectorException.class);
+    thrown.expectMessage(
+        "No primary key found for table no_pk_table. Please specify at least one primary key column.");
+
+    catalog.createTable(ident, schema, null, Collections.emptyMap());
+  }
+
+  @Test
   public void alterTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
-    catalog.alterTable(null, null);
+    catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null);
   }
 
   @Test
   public void renameTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.renameTable(null, null);
+  }
+
+  @Test
+  public void testToDdl() {
+    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "my_table");
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              new StructField("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              new StructField(
+                  "id2", DataTypes.StringType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              new StructField("name", DataTypes.StringType, true, Metadata.empty()),
+              new StructField("active", DataTypes.BooleanType, false, Metadata.empty()),
+              new StructField("amount", DataTypes.DoubleType, true, Metadata.empty()),
+              new StructField("data", DataTypes.BinaryType, true, Metadata.empty()),
+              new StructField("created_at", DataTypes.TimestampType, true, Metadata.empty()),
+              new StructField("created_on", DataTypes.DateType, true, Metadata.empty()),
+              new StructField("price", DataTypes.createDecimalType(10, 2), true, Metadata.empty()),
+            });
+
+    String ddl = SpannerCatalog.toDdl(ident, schema, dialect);
+
+    if (dialect == Dialect.POSTGRESQL) {
+      assertEquals(
+          "CREATE TABLE my_table (id bigint NOT NULL, id2 varchar NOT NULL, name varchar, "
+              + "active boolean NOT NULL, amount float8, data bytea, "
+              + "created_at timestamptz, created_on date, price numeric, "
+              + "PRIMARY KEY (id, id2))",
+          ddl);
+    } else {
+      assertEquals(
+          "CREATE TABLE my_table (id INT64 NOT NULL, id2 STRING(MAX) NOT NULL, name STRING(MAX), "
+              + "active BOOL NOT NULL, amount FLOAT64, data BYTES(MAX), created_at TIMESTAMP, "
+              + "created_on DATE, price NUMERIC, PRIMARY KEY (id, id2))",
+          ddl);
+    }
   }
 }

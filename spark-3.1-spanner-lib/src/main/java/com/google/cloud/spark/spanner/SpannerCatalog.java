@@ -22,9 +22,12 @@ import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadContext;
 import com.google.cloud.spanner.Spanner;
 import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.Identifier;
@@ -32,15 +35,15 @@ import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
 import org.apache.spark.sql.connector.expressions.Transform;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.StructField;
-import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SpannerCatalog implements TableCatalog {
-
+  public static final String SPANNER_PRIMARY_KEY_TAG = "spanner.primaryKey";
+  public static Metadata PRIMARY_KEY_METADATA =
+      new MetadataBuilder().putBoolean(SPANNER_PRIMARY_KEY_TAG, true).build();
   private static final Logger log = LoggerFactory.getLogger(SpannerCatalog.class);
   private String catalogName;
   private CaseInsensitiveStringMap options;
@@ -128,8 +131,8 @@ public class SpannerCatalog implements TableCatalog {
     DatabaseClient dbClient =
         spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
     Dialect dialect = dbClient.getDialect();
-    String ddl = toDdl(ident, schema, properties, dialect);
-
+    String ddl = toDdl(ident, schema, dialect);
+    System.out.print(ddl);
     DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
     OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
         dbAdminClient.updateDatabaseDdl(
@@ -147,8 +150,7 @@ public class SpannerCatalog implements TableCatalog {
     return factorySpannerTable(ident);
   }
 
-  private String toDdl(
-      Identifier ident, StructType schema, Map<String, String> properties, Dialect dialect) {
+  public static String toDdl(Identifier ident, StructType schema, Dialect dialect) {
     StringBuilder ddl = new StringBuilder();
     ddl.append("CREATE TABLE ").append(ident.name()).append(" (");
     for (StructField field : schema.fields()) {
@@ -158,17 +160,30 @@ public class SpannerCatalog implements TableCatalog {
       }
       ddl.append(", ");
     }
-    String primaryKey = properties.get("primaryKey");
-    if (primaryKey == null || primaryKey.isEmpty()) {
+
+    List<String> primaryKeys =
+        Arrays.stream(schema.fields())
+            .filter(
+                f ->
+                    f.metadata().contains(SPANNER_PRIMARY_KEY_TAG)
+                        && f.metadata().getBoolean(SPANNER_PRIMARY_KEY_TAG))
+            .map(StructField::name)
+            .collect(Collectors.toList());
+
+    if (primaryKeys.isEmpty()) {
       throw new SpannerConnectorException(
-          SpannerErrorCode.INVALID_ARGUMENT, "primaryKey must be specified in properties");
+          SpannerErrorCode.INVALID_ARGUMENT,
+          "No primary key found for table "
+              + ident.name()
+              + ". Please specify at least one primary key column.");
     }
-    ddl.append("PRIMARY KEY (").append(primaryKey).append(")");
+
+    ddl.append("PRIMARY KEY (").append(String.join(", ", primaryKeys)).append(")");
     ddl.append(")");
     return ddl.toString();
   }
 
-  private String sparkTypeToSpannerType(StructField field, Dialect dialect) {
+  private static String sparkTypeToSpannerType(StructField field, Dialect dialect) {
     if (dialect == Dialect.POSTGRESQL) {
       if (field.dataType().equals(DataTypes.LongType)) {
         return "bigint";
@@ -180,7 +195,7 @@ public class SpannerCatalog implements TableCatalog {
         return "boolean";
       }
       if (field.dataType().equals(DataTypes.DoubleType)) {
-        return "double precision";
+        return "float8";
       }
       if (field.dataType().equals(DataTypes.BinaryType)) {
         return "bytea";

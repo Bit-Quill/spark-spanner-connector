@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.google.cloud.spark.spanner.SpannerCatalog;
 import com.google.cloud.spark.spanner.TestData;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -37,9 +38,7 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.functions;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.StructField;
-import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.*;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -654,7 +653,7 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     StructType schema =
         new StructType(
             new StructField[] {
-              DataTypes.createStructField("long_col", DataTypes.LongType, false),
+              DataTypes.createStructField("long_col", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
               DataTypes.createStructField("string_col", DataTypes.StringType, true),
               DataTypes.createStructField("bool_col", DataTypes.BooleanType, true),
               DataTypes.createStructField("double_col", DataTypes.DoubleType, true),
