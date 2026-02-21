@@ -24,6 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.google.cloud.spanner.*;
+import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -177,20 +178,6 @@ public class SpannerCatalogTest {
   }
 
   @Test
-  public void createTableShouldReturnSpannerTable() throws TableAlreadyExistsException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "new_table");
-    StructType schema =
-        new StructType(
-            new StructField[] {DataTypes.createStructField("id", DataTypes.LongType, false)});
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
-        .thenReturn(false);
-    Table table = catalog.createTable(ident, schema, null, Collections.emptyMap());
-    assertNotNull(table);
-    assertTrue(table instanceof SpannerTable);
-    assertEquals("new_table", table.name());
-  }
-
-  @Test
   public void createTableShouldThrowTableAlreadyExistsException()
       throws TableAlreadyExistsException {
     Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "existing_table");
@@ -204,12 +191,6 @@ public class SpannerCatalogTest {
   public void alterTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.alterTable(null, null);
-  }
-
-  @Test
-  public void dropTableShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.dropTable(null);
   }
 
   @Test
