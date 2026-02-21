@@ -15,6 +15,7 @@
 package com.google.cloud.spark.spanner;
 
 import com.google.cloud.spanner.SessionPoolOptions;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -25,11 +26,13 @@ import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 public class SpannerDataWriterFactory implements DataWriterFactory {
-  private final CaseInsensitiveStringMap properties;
+  // Instances of this class are marshaled to worker nodes so all fields need to be serializable.
+  // CaseInsensitiveMap is not.
+  private final Map<String, String> properties;
   private final StructType schema;
 
   public SpannerDataWriterFactory(CaseInsensitiveStringMap properties, StructType schema) {
-    this.properties = properties;
+    this.properties = properties.asCaseSensitiveMap();
     this.schema = schema;
   }
 

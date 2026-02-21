@@ -16,6 +16,7 @@ package com.google.cloud.spark.spanner;
 
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.connection.Connection;
+import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import java.util.Map;
@@ -58,20 +59,22 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   private static final Logger log = LoggerFactory.getLogger(SpannerTable.class);
 
   public SpannerTable(Map<String, String> properties) {
-    this(
-        SpannerUtils.getRequiredOption(properties, "projectId"),
-        SpannerUtils.getRequiredOption(properties, "instanceId"),
-        SpannerUtils.getRequiredOption(properties, "databaseId"),
-        SpannerUtils.getRequiredOption(properties, "table"),
-        new CaseInsensitiveStringMap(properties));
+    this(new CaseInsensitiveStringMap(properties), null);
   }
 
   public SpannerTable(CaseInsensitiveStringMap properties, StructType dfSchema) {
-    this.properties = copyAndAddOpenLineageDatasetProperties(properties);
     this.tableName = SpannerUtils.getRequiredOption(properties, "table");
     this.projectId = SpannerUtils.getRequiredOption(properties, "projectId");
     this.instanceId = SpannerUtils.getRequiredOption(properties, "instanceId");
     this.databaseId = SpannerUtils.getRequiredOption(properties, "databaseId");
+
+    this.properties =
+        new CaseInsensitiveStringMap(
+            ImmutableMap.<String, String>builder()
+                .putAll(properties)
+                .putAll(getOpenLineageDatasetProperties())
+                .build());
+
     try (Connection conn = SpannerUtils.connectionFromProperties(properties)) {
       boolean isPostgreSql;
       if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
@@ -99,11 +102,27 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       String databaseId,
       String tableName,
       CaseInsensitiveStringMap properties) {
-    this.properties = copyAndAddOpenLineageDatasetProperties(properties);
+    Verify.verifyNotNull(projectId, "projectId");
+    Verify.verifyNotNull(instanceId, "instanceId");
+    Verify.verifyNotNull(tableName, "tableName");
+    Verify.verifyNotNull(properties, "properties");
+
     this.tableName = tableName;
     this.projectId = projectId;
     this.instanceId = instanceId;
     this.databaseId = databaseId;
+
+    this.properties =
+        new CaseInsensitiveStringMap(
+            ImmutableMap.<String, String>builder()
+                .putAll(getOpenLineageDatasetProperties())
+                .putAll(properties)
+                .put("projectId", projectId)
+                .put("instanceId", instanceId)
+                .put("databaseId", databaseId)
+                .put("table", tableName)
+                .build());
+
     try (Connection conn =
         SpannerUtils.connectionFromProperties(
             projectId, instanceId, databaseId, properties.get("emulatorHost"))) {
@@ -273,6 +292,9 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   @Override
   public StructType schema() {
+    if (this.properties.containsKey("enablePartialRowUpdates")) {
+      return this.dfSchema;
+    }
     return this.dbSchema.schema;
   }
 
@@ -317,5 +339,15 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
             .put("openlineage.dataset.storageDatasetFacet.storageLayer", "spanner")
             .build();
     return new CaseInsensitiveStringMap(expandedProperties);
+  }
+
+  private Map<String, String> getOpenLineageDatasetProperties() {
+    return ImmutableMap.of(
+        "openlineage.dataset.name",
+        String.format("%s/%s", databaseId, tableName),
+        "openlineage.dataset.namespace",
+        String.format("%s/%s", projectId, instanceId),
+        "openlineage.dataset.storageDatasetFacet.storageLayer",
+        "spanner");
   }
 }

@@ -14,7 +14,6 @@
 
 package com.google.cloud.spark.spanner;
 
-import com.google.cloud.spark.spanner.graph.SpannerGraphBuilder;
 import java.util.Map;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.SupportsCatalogOptions;
@@ -48,15 +47,12 @@ public abstract class SparkSpannerTableProviderBase
         Boolean.parseBoolean(options.getOrDefault("enablePartialRowUpdates", "false"));
 
     boolean hasTable = options.containsKey("table");
-    boolean hasGraph = options.containsKey("graph");
-    if (hasTable && !hasGraph) {
+    if (hasTable) {
       if (enablePartialRowUpdates) {
         return new SpannerTable(options, schema);
       } else {
         return new SpannerTable(options);
       }
-    } else if (!hasTable && hasGraph) {
-      return SpannerGraphBuilder.build(options);
     } else {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,
@@ -84,11 +80,8 @@ public abstract class SparkSpannerTableProviderBase
 
   private Table getTable(Map<String, String> properties) {
     boolean hasTable = properties.containsKey("table");
-    boolean hasGraph = properties.containsKey("graph");
-    if (hasTable && !hasGraph) {
+    if (hasTable) {
       return new SpannerTable(properties);
-    } else if (!hasTable && hasGraph) {
-      return SpannerGraphBuilder.build(properties);
     } else {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,
@@ -102,19 +95,12 @@ public abstract class SparkSpannerTableProviderBase
     String instanceId = options.get("instanceId");
     String databaseId = options.get("databaseId");
     String table = options.get("table");
-    String graph = options.get("graph");
 
-    if (projectId == null || instanceId == null || databaseId == null) {
+    if (projectId == null || instanceId == null || databaseId == null || table == null) {
       return null;
     }
 
-    // table and graph are mutually exclusive.
-    if ((table == null) == (graph == null)) {
-      return null;
-    }
-
-    String name = table != null ? table : graph;
-    return Identifier.of(new String[] {projectId, instanceId, databaseId}, name);
+    return Identifier.of(new String[] {projectId, instanceId, databaseId}, table);
   }
 
   @Override

@@ -48,23 +48,6 @@ public class SparkSpannerTableProviderBaseTest {
   }
 
   @Test
-  public void testExtractIdentifierWithGraph() {
-    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
-    CaseInsensitiveStringMap options =
-        new CaseInsensitiveStringMap(
-            new HashMap<String, String>() {
-              {
-                put("projectId", "p");
-                put("instanceId", "i");
-                put("databaseId", "d");
-                put("graph", "g");
-              }
-            });
-    Identifier identifier = provider.extractIdentifier(options);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "g"), identifier);
-  }
-
-  @Test
   public void testExtractIdentifierWithTableAndGraph() {
     TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
     CaseInsensitiveStringMap options =
@@ -79,11 +62,11 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier = provider.extractIdentifier(options);
-    assertNull(identifier);
+    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier);
   }
 
   @Test
-  public void testExtractIdentifierWithNoTableOrGraph() {
+  public void testExtractIdentifierWithNoTable() {
     TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
     CaseInsensitiveStringMap options =
         new CaseInsensitiveStringMap(

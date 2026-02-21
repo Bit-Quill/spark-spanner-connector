@@ -199,7 +199,7 @@ public class SpannerUtils {
   }
 
   public static BatchClientWithCloser batchClientFromProperties(
-      CaseInsensitiveStringMap properties, SessionPoolOptions sessionPoolOptions) {
+      Map<String, String> properties, SessionPoolOptions sessionPoolOptions) {
     SpannerOptions options = buildSpannerOptions(properties, sessionPoolOptions);
     Spanner spanner = options.getService();
     DatabaseId databaseId =

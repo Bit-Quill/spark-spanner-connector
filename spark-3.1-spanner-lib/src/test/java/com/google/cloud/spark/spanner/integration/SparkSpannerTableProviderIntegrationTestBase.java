@@ -55,7 +55,7 @@ public abstract class SparkSpannerTableProviderIntegrationTestBase<
   }
 
   @Test
-  public void getTableForWrite_withoutenablePartialRowUpdates_returnsTableWithFullSchema() {
+  public void getTableForWrite_withoutEnablePartialRowUpdates_returnsTableWithFullSchema() {
     // Arrange
     T provider = getInstance();
     Map<String, String> props = connectionProperties();
