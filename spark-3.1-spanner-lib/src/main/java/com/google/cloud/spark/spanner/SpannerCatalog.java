@@ -25,12 +25,9 @@ import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.Identifier;
-import org.apache.spark.sql.connector.catalog.NamespaceChange;
-import org.apache.spark.sql.connector.catalog.SupportsNamespaces;
 import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
@@ -42,7 +39,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
+public class SpannerCatalog implements TableCatalog {
 
   private static final Logger log = LoggerFactory.getLogger(SpannerCatalog.class);
   private String catalogName;
@@ -290,95 +287,5 @@ public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
   @Override
   public void renameTable(Identifier oldIdent, Identifier newIdent) {
     throw new UnsupportedOperationException("RENAME TABLE is not supported for SpannerCatalog");
-  }
-
-  // SupportsNamespaces methods
-  @Override
-  public String[][] listNamespaces() {
-    // List projects (top-level)
-    // This would require Google Cloud ResourceManager API or similar.
-    // For now, return an empty array or a dummy project if needed.
-    return new String[0][];
-  }
-
-  @Override
-  public String[][] listNamespaces(String[] namespace) {
-    // Depending on the length of namespace, list instances or databases
-    // For simplicity, we'll assume a max depth of [projectId, instanceId, databaseId]
-    if (namespace.length == 0) {
-      // List projectIds available from options
-      if (options.containsKey("projectId")) {
-        return new String[][] {{options.get("projectId")}};
-      }
-      return new String[0][];
-    } else if (namespace.length == 1) { // Listing instances in a project
-      // For now, return instances within the specified projectId from options
-      if (options.containsKey("projectId") && options.get("projectId").equals(namespace[0])) {
-        if (options.containsKey("instanceId")) {
-          return new String[][] {{options.get("projectId"), options.get("instanceId")}};
-        }
-      }
-      return new String[0][];
-    } else if (namespace.length == 2) { // Listing databases in an instance
-      // For now, return databases within the specified instanceId from options
-      if (options.containsKey("projectId")
-          && options.get("projectId").equals(namespace[0])
-          && options.containsKey("instanceId")
-          && options.get("instanceId").equals(namespace[1])) {
-        if (options.containsKey("databaseId")) {
-          return new String[][] {
-            {options.get("projectId"), options.get("instanceId"), options.get("databaseId")}
-          };
-        }
-      }
-      return new String[0][];
-    }
-    return new String[0][];
-  }
-
-  @Override
-  public boolean namespaceExists(String[] namespace) {
-    if (namespace.length == 0) {
-      return true; // Root namespace always exists
-    } else if (namespace.length == 1) { // projectId
-      return options.containsKey("projectId") && options.get("projectId").equals(namespace[0]);
-    } else if (namespace.length == 2) { // projectId, instanceId
-      return options.containsKey("projectId")
-          && options.get("projectId").equals(namespace[0])
-          && options.containsKey("instanceId")
-          && options.get("instanceId").equals(namespace[1]);
-    } else if (namespace.length == 3) { // projectId, instanceId, databaseId
-      return options.containsKey("projectId")
-          && options.get("projectId").equals(namespace[0])
-          && options.containsKey("instanceId")
-          && options.get("instanceId").equals(namespace[1])
-          && options.containsKey("databaseId")
-          && options.get("databaseId").equals(namespace[2]);
-    }
-    return false;
-  }
-
-  @Override
-  public Map<String, String> loadNamespaceMetadata(String[] namespace)
-      throws NoSuchNamespaceException {
-    if (namespaceExists(namespace)) {
-      return Collections.emptyMap(); // For simplicity, return empty metadata
-    }
-    throw new NoSuchNamespaceException(namespace);
-  }
-
-  @Override
-  public void createNamespace(String[] namespace, Map<String, String> metadata) {
-    throw new UnsupportedOperationException("CREATE NAMESPACE is not supported for SpannerCatalog");
-  }
-
-  @Override
-  public void alterNamespace(String[] namespace, NamespaceChange... changes) {
-    throw new UnsupportedOperationException("ALTER NAMESPACE is not supported for SpannerCatalog");
-  }
-
-  @Override
-  public boolean dropNamespace(String[] namespace) {
-    throw new UnsupportedOperationException("DROP NAMESPACE is not supported for SpannerCatalog");
   }
 }

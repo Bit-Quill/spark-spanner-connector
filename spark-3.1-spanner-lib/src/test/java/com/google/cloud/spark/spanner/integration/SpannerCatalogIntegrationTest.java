@@ -21,7 +21,6 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.cloud.spark.spanner.SpannerCatalog;
 import com.google.cloud.spark.spanner.SpannerTable;
-import com.google.cloud.spark.spanner.integration.SparkSpannerIntegrationTestBase;
 import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.Collection;

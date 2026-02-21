@@ -29,7 +29,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import org.apache.spark.sql.catalyst.analysis.NoSuchNamespaceException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.Identifier;
@@ -217,67 +216,5 @@ public class SpannerCatalogTest {
   public void renameTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.renameTable(null, null);
-  }
-
-  @Test
-  public void listNamespacesShouldReturnEmpty() {
-    assertEquals(0, catalog.listNamespaces().length);
-  }
-
-  @Test
-  public void listNamespacesWithNoNamespaceShouldReturnProject() {
-    String[][] expected = new String[][] {{"p"}};
-    assertArrayEquals(expected, catalog.listNamespaces(new String[0]));
-  }
-
-  @Test
-  public void listNamespacesWithProjectShouldReturnInstance() {
-    String[][] expected = new String[][] {{"p", "i"}};
-    assertArrayEquals(expected, catalog.listNamespaces(new String[] {"p"}));
-  }
-
-  @Test
-  public void listNamespacesWithProjectAndInstanceShouldReturnDatabase() {
-    String[][] expected = new String[][] {{"p", "i", "d"}};
-    assertArrayEquals(expected, catalog.listNamespaces(new String[] {"p", "i"}));
-  }
-
-  @Test
-  public void namespaceExistsShouldWork() {
-    assertTrue(catalog.namespaceExists(new String[0]));
-    assertTrue(catalog.namespaceExists(new String[] {"p"}));
-    assertTrue(catalog.namespaceExists(new String[] {"p", "i"}));
-    assertTrue(catalog.namespaceExists(new String[] {"p", "i", "d"}));
-    assertFalse(catalog.namespaceExists(new String[] {"p", "i", "d", "t"}));
-    assertFalse(catalog.namespaceExists(new String[] {"z"}));
-  }
-
-  @Test
-  public void loadNamespaceMetadataShouldWork() throws NoSuchNamespaceException {
-    assertTrue(catalog.loadNamespaceMetadata(new String[] {"p", "i", "d"}).isEmpty());
-  }
-
-  @Test
-  public void loadNamespaceMetadataShouldThrowException() throws NoSuchNamespaceException {
-    thrown.expect(NoSuchNamespaceException.class);
-    catalog.loadNamespaceMetadata(new String[] {"z"});
-  }
-
-  @Test
-  public void createNamespaceShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.createNamespace(null, null);
-  }
-
-  @Test
-  public void alterNamespaceShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.alterNamespace(null, null);
-  }
-
-  @Test
-  public void dropNamespaceShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.dropNamespace(null);
   }
 }
