@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 import org.apache.spark.sql.connector.catalog.SupportsRead;
 import org.apache.spark.sql.connector.catalog.SupportsWrite;
 import org.apache.spark.sql.connector.catalog.Table;
@@ -49,7 +50,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   private final String projectId;
   private final SpannerTableSchema dbSchema;
-  private final StructType sparkSchema;
+  private @Nullable StructType dfSchema;
   private static final ImmutableSet<TableCapability> tableCapabilities =
       ImmutableSet.of(TableCapability.BATCH_READ, TableCapability.BATCH_WRITE);
   private final Map<String, String> properties;
@@ -57,29 +58,12 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   private static final Logger log = LoggerFactory.getLogger(SpannerTable.class);
 
   public SpannerTable(Map<String, String> properties) {
-    this.properties = properties;
-    this.tableName = SpannerUtils.getRequiredOption(properties, "table");
-    this.projectId = SpannerUtils.getRequiredOption(properties, "projectId");
-    this.instanceId = SpannerUtils.getRequiredOption(properties, "instanceId");
-    this.databaseId = SpannerUtils.getRequiredOption(properties, "databaseId");
-    try (Connection conn = SpannerUtils.connectionFromProperties(properties)) {
-      boolean isPostgreSql;
-      if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
-        isPostgreSql = false;
-      } else if (conn.getDialect().equals(Dialect.POSTGRESQL)) {
-        isPostgreSql = true;
-      } else {
-        throw new SpannerConnectorException(
-            SpannerErrorCode.DATABASE_DIALECT_NOT_SUPPORTED,
-            "The dialect used "
-                + conn.getDialect()
-                + " in the Spanner table "
-                + tableName
-                + " is not supported.");
-      }
-      this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);
-      this.sparkSchema = this.dbSchema.schema;
-    }
+    this(
+        SpannerUtils.getRequiredOption(properties, "projectId"),
+        SpannerUtils.getRequiredOption(properties, "instanceId"),
+        SpannerUtils.getRequiredOption(properties, "databaseId"),
+        SpannerUtils.getRequiredOption(properties, "table"),
+        new CaseInsensitiveStringMap(properties));
   }
 
   public SpannerTable(Map<String, String> properties, StructType dfSchema) {
@@ -105,7 +89,39 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       }
       // Still get the DB schema for validation.
       this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);
-      this.sparkSchema = dfSchema;
+      this.dfSchema = dfSchema;
+    }
+  }
+
+  public SpannerTable(
+      String projectId,
+      String instanceId,
+      String databaseId,
+      String tableName,
+      CaseInsensitiveStringMap properties) {
+    this.properties = properties;
+    this.tableName = tableName;
+    this.projectId = projectId;
+    this.instanceId = instanceId;
+    this.databaseId = databaseId;
+    try (Connection conn =
+        SpannerUtils.connectionFromProperties(
+            projectId, instanceId, databaseId, properties.get("emulatorHost"))) {
+      boolean isPostgreSql;
+      if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
+        isPostgreSql = false;
+      } else if (conn.getDialect().equals(Dialect.POSTGRESQL)) {
+        isPostgreSql = true;
+      } else {
+        throw new SpannerConnectorException(
+            SpannerErrorCode.DATABASE_DIALECT_NOT_SUPPORTED,
+            "The dialect used "
+                + conn.getDialect()
+                + " in the Spanner table "
+                + tableName
+                + " is not supported.");
+      }
+      this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);
     }
   }
 
@@ -257,7 +273,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   @Override
   public StructType schema() {
-    return this.sparkSchema;
+    return this.dbSchema.schema;
   }
 
   /*
@@ -277,7 +293,8 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   @Override
   public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
-    return new SpannerScanBuilder(options);
+    return new SpannerScanBuilder(
+        this.projectId, this.instanceId, this.databaseId, tableName, options);
   }
 
   @Override

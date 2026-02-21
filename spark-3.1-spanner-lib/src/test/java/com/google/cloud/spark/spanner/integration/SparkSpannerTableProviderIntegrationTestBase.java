@@ -71,7 +71,7 @@ public abstract class SparkSpannerTableProviderIntegrationTestBase<
     // The table schema should NOT be the partial schema.
     // It should be the full schema from the database.
     assertNotEquals(
-        "Without enablePartialRowUpdates, the table schema should be the full database schema, not the partial DataFrame schema.",
+        "Without enablePartialRowUpdates, the table schema should be the full database schema, not the apartial DataFrame schema.",
         partialSchema,
         table.schema());
 

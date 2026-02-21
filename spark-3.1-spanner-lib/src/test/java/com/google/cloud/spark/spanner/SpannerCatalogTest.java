@@ -86,9 +86,9 @@ public class SpannerCatalogTest {
           }
 
           @Override
-          protected SpannerTable factorySpannerTable(CaseInsensitiveStringMap tableOptions) {
+          protected SpannerTable factorySpannerTable(Identifier ident) {
             SpannerTable mockSpannerTable = mock(SpannerTable.class);
-            when(mockSpannerTable.name()).thenReturn(tableOptions.get("table"));
+            when(mockSpannerTable.name()).thenReturn(ident.name());
             return mockSpannerTable;
           }
         };

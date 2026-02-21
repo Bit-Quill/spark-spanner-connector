@@ -45,9 +45,23 @@ public class SpannerScanBuilder
   private Map<String, StructField> fields;
 
   public SpannerScanBuilder(CaseInsensitiveStringMap options) {
+    this(
+        options.get("projectId"),
+        options.get("instanceId"),
+        options.get("databaseId"),
+        options.get("table"),
+        options);
+  }
+
+  public SpannerScanBuilder(
+      String projectId,
+      String instanceId,
+      String databaseId,
+      String tableName,
+      CaseInsensitiveStringMap options) {
     this.opts = options;
     this.pushedFilters = new ArrayList<Filter>();
-    this.spannerTable = new SpannerTable(options);
+    this.spannerTable = new SpannerTable(projectId, instanceId, databaseId, tableName, options);
     this.fields = new LinkedHashMap<>();
     for (StructField field : spannerTable.schema().fields()) {
       fields.put(field.name(), field);

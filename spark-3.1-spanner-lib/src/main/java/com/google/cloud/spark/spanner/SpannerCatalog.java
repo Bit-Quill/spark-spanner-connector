@@ -101,13 +101,13 @@ public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
     return factorySpannerTable(ident);
   }
 
-  private Table factorySpannerTable(Identifier ident) {
-    Map<String, String> tableOptions = new java.util.HashMap<>(this.options);
-    tableOptions.put("projectId", ident.namespace()[0]);
-    tableOptions.put("instanceId", ident.namespace()[1]);
-    tableOptions.put("databaseId", ident.namespace()[2]);
-    tableOptions.put("table", ident.name());
-    return factorySpannerTable(new CaseInsensitiveStringMap(tableOptions));
+  protected Table factorySpannerTable(Identifier ident) {
+    return new SpannerTable(
+        ident.namespace()[0],
+        ident.namespace()[1],
+        ident.namespace()[2],
+        ident.name(),
+        this.options);
   }
 
   @Override
@@ -161,11 +161,6 @@ public class SpannerCatalog implements TableCatalog, SupportsNamespaces {
   @Override
   public void renameTable(Identifier oldIdent, Identifier newIdent) {
     throw new UnsupportedOperationException("RENAME TABLE is not supported for SpannerCatalog");
-  }
-
-  // Method to create SpannerTable, made protected for testing
-  protected SpannerTable factorySpannerTable(CaseInsensitiveStringMap tableOptions) {
-    return new SpannerTable(tableOptions);
   }
 
   // SupportsNamespaces methods

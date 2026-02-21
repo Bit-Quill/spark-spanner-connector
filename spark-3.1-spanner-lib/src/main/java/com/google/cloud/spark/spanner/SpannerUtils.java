@@ -163,8 +163,16 @@ public class SpannerUtils {
   }
 
   public static Connection connectionFromProperties(Map<String, String> properties) {
+    return connectionFromProperties(
+        properties.get("projectId"),
+        properties.get("instanceId"),
+        properties.get("databaseId"),
+        properties.get("emulatorHost"));
+  }
+
+  public static Connection connectionFromProperties(
+      String projectId, String instanceId, String databaseId, @Nullable String emulatorHost) {
     String connUriPrefix = "cloudspanner:";
-    String emulatorHost = properties.get("emulatorHost");
     if (emulatorHost != null) {
       connUriPrefix = "cloudspanner://" + emulatorHost;
     }
@@ -173,9 +181,9 @@ public class SpannerUtils {
         String.format(
             connUriPrefix
                 + "/projects/%s/instances/%s/databases/%s?autoConfigEmulator=%s;usePlainText=%s",
-            properties.get("projectId"),
-            properties.get("instanceId"),
-            properties.get("databaseId"),
+            projectId,
+            instanceId,
+            databaseId,
             emulatorHost != null,
             emulatorHost != null);
 
