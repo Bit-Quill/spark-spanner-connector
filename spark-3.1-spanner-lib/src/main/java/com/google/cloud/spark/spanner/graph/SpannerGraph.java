@@ -29,7 +29,7 @@ public class SpannerGraph implements Table, SupportsRead, SupportsWrite {
   static final List<String> requiredOptions =
       ImmutableList.of("projectId", "instanceId", "databaseId", "graph", "type");
 
-  public final Map<String, String> options;
+  public final CaseInsensitiveStringMap options;
   public final Options.ReadAndQueryOption dataBoostEnabled;
   public final SpannerGraphConfigs configs;
   public final @Nullable Statement directQuery;

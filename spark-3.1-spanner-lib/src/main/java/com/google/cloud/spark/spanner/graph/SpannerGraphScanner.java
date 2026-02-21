@@ -43,7 +43,7 @@ public class SpannerGraphScanner implements Batch, Scan {
 
   private static final Logger log = LoggerFactory.getLogger(SpannerScanner.class);
 
-  private final Map<String, String> options;
+  private final CaseInsensitiveStringMap options;
   private final @Nullable Map<String, List<String>> extraHeaders;
   private final TimestampBound readTimestamp;
   private final @Nullable Long partitionSizeBytes;

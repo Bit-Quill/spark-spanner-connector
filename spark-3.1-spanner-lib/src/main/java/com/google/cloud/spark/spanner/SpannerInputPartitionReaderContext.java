@@ -39,16 +39,13 @@ public class SpannerInputPartitionReaderContext
       BatchTransactionId batchTransactionId,
       String mapAsJSONStr,
       SpannerRowConverter rowConverter) {
-    Map<String, String> opts;
+    CaseInsensitiveStringMap opts;
     try {
-      opts = SpannerUtils.deserializeMap(mapAsJSONStr);
+      opts = new CaseInsensitiveStringMap(SpannerUtils.deserializeMap(mapAsJSONStr));
     } catch (JsonProcessingException e) {
       throw new SpannerConnectorException(
           SpannerErrorCode.SPANNER_FAILED_TO_PARSE_OPTIONS, "Error parsing the input options.", e);
     }
-    // The map might be case-insensitive when being serialized
-    opts = new CaseInsensitiveStringMap(opts);
-
     // Please note that we are using BatchClientWithCloser to avoid resource leaks.
     // That is because, since we do have a deterministic scope and timeline for how long
     // SpannerInputPartitionReaderContext's BatchClient.Spanner will execute, we use this

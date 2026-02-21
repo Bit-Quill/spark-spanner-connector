@@ -36,7 +36,6 @@ import org.slf4j.LoggerFactory;
  */
 public class SpannerScanBuilder
     implements ScanBuilder, SupportsPushDownFilters, SupportsPushDownRequiredColumns {
-  private CaseInsensitiveStringMap opts;
   private List<Filter> pushedFilters;
   private Set<String> requiredColumns;
   private SpannerScanner scanner;
@@ -44,24 +43,9 @@ public class SpannerScanBuilder
   private SpannerTable spannerTable;
   private Map<String, StructField> fields;
 
-  public SpannerScanBuilder(CaseInsensitiveStringMap options) {
-    this(
-        options.get("projectId"),
-        options.get("instanceId"),
-        options.get("databaseId"),
-        options.get("table"),
-        options);
-  }
-
-  public SpannerScanBuilder(
-      String projectId,
-      String instanceId,
-      String databaseId,
-      String tableName,
-      CaseInsensitiveStringMap options) {
-    this.opts = options;
+  public SpannerScanBuilder(SpannerTable spannerTable) {
     this.pushedFilters = new ArrayList<Filter>();
-    this.spannerTable = new SpannerTable(projectId, instanceId, databaseId, tableName, options);
+    this.spannerTable = spannerTable;
     this.fields = new LinkedHashMap<>();
     for (StructField field : spannerTable.schema().fields()) {
       fields.put(field.name(), field);
@@ -72,7 +56,7 @@ public class SpannerScanBuilder
   public Scan build() {
     this.scanner =
         new SpannerScanner(
-            this.opts.asCaseSensitiveMap(),
+            this.spannerTable.properties(),
             this.spannerTable,
             this.fields,
             this.pushedFilters(),

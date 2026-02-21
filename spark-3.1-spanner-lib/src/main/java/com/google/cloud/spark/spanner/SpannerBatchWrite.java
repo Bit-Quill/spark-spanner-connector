@@ -35,7 +35,7 @@ public class SpannerBatchWrite implements BatchWrite {
   @Override
   public DataWriterFactory createBatchWriterFactory(PhysicalWriteInfo info) {
     return new SpannerDataWriterFactory(
-        this.info.options().asCaseSensitiveMap(), this.info.schema());
+        this.info.options(), this.info.schema());
   }
 
   @Override

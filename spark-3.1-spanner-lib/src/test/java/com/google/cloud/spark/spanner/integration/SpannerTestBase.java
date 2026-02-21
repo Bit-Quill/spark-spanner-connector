@@ -267,6 +267,18 @@ class SpannerTestBase {
     return connectionProperties(false);
   }
 
+  protected static SpannerTable getSpannerTable(boolean usePostgreSql) {
+    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
+    return new SpannerTable(connectionProperties);
+  }
+
+
+  protected static SpannerTable getSpannerTable(String tableName, boolean usePostgreSql) {
+    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
+    connectionProperties.put("table", tableName);
+    return new SpannerTable(connectionProperties);
+  }
+
   static InternalRow makeInternalRow(int A, String B, double C) {
     GenericInternalRow row = new GenericInternalRow(3);
     row.setLong(0, A);

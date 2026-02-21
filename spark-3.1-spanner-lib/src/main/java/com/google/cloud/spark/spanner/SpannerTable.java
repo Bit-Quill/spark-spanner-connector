@@ -53,7 +53,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   private @Nullable StructType dfSchema;
   private static final ImmutableSet<TableCapability> tableCapabilities =
       ImmutableSet.of(TableCapability.BATCH_READ, TableCapability.BATCH_WRITE);
-  private final Map<String, String> properties;
+  private final CaseInsensitiveStringMap properties;
 
   private static final Logger log = LoggerFactory.getLogger(SpannerTable.class);
 
@@ -66,8 +66,8 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
         new CaseInsensitiveStringMap(properties));
   }
 
-  public SpannerTable(Map<String, String> properties, StructType dfSchema) {
-    this.properties = properties;
+  public SpannerTable(CaseInsensitiveStringMap properties, StructType dfSchema) {
+    this.properties = copyAndAddOpenLineageDatasetProperties(properties);
     this.tableName = SpannerUtils.getRequiredOption(properties, "table");
     this.projectId = SpannerUtils.getRequiredOption(properties, "projectId");
     this.instanceId = SpannerUtils.getRequiredOption(properties, "instanceId");
@@ -99,7 +99,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       String databaseId,
       String tableName,
       CaseInsensitiveStringMap properties) {
-    this.properties = properties;
+    this.properties = copyAndAddOpenLineageDatasetProperties(properties);
     this.tableName = tableName;
     this.projectId = projectId;
     this.instanceId = instanceId;
@@ -293,8 +293,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   @Override
   public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
-    return new SpannerScanBuilder(
-        this.projectId, this.instanceId, this.databaseId, tableName, options);
+    return new SpannerScanBuilder(this);
   }
 
   @Override
@@ -304,15 +303,17 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   }
 
   @Override
-  public Map<String, String> properties() {
-    ImmutableMap.Builder<String, String> builder =
-        ImmutableMap.<String, String>builder()
-            .putAll(this.properties)
+  public CaseInsensitiveStringMap properties() {
+    return properties;
+  }
+
+  private CaseInsensitiveStringMap copyAndAddOpenLineageDatasetProperties(
+      CaseInsensitiveStringMap properties) {
+    Map<String, String> expandedProperties = ImmutableMap.<String, String>builder().putAll(properties)
             .put("openlineage.dataset.name", String.format("%s/%s", databaseId, tableName))
-            .put(
-                "openlineage.dataset.namespace",
-                String.format("spanner://%s/%s", projectId, instanceId))
-            .put("openlineage.dataset.storageDatasetFacet.storageLayer", "spanner");
-    return builder.build();
+            .put("openlineage.dataset.namespace", String.format("%s/%s", projectId, instanceId))
+            .put("openlineage.dataset.storageDatasetFacet.storageLayer", "spanner")
+            .build();
+    return new CaseInsensitiveStringMap(expandedProperties);
   }
 }
