@@ -35,15 +35,18 @@ import org.apache.spark.sql.connector.catalog.Table;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
 import org.apache.spark.sql.connector.catalog.TableChange;
 import org.apache.spark.sql.connector.expressions.Transform;
-import org.apache.spark.sql.types.*;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
+import org.apache.spark.sql.types.MetadataBuilder;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SpannerCatalog implements TableCatalog {
-  public static final String SPANNER_PRIMARY_KEY_TAG = "spanner.primaryKey";
   public static Metadata PRIMARY_KEY_METADATA =
-      new MetadataBuilder().putBoolean(SPANNER_PRIMARY_KEY_TAG, true).build();
+      new MetadataBuilder().putBoolean(SpannerUtils.PRIMARY_KEY_TAG, true).build();
   private static final Logger log = LoggerFactory.getLogger(SpannerCatalog.class);
   private String catalogName;
   private CaseInsensitiveStringMap options;
@@ -113,7 +116,8 @@ public class SpannerCatalog implements TableCatalog {
         ident.namespace()[1],
         ident.namespace()[2],
         ident.name(),
-        this.options);
+        this.options,
+        null);
   }
 
   @Override
@@ -132,7 +136,6 @@ public class SpannerCatalog implements TableCatalog {
         spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
     Dialect dialect = dbClient.getDialect();
     String ddl = toDdl(ident, schema, dialect);
-    System.out.print(ddl);
     DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
     OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
         dbAdminClient.updateDatabaseDdl(
@@ -165,8 +168,8 @@ public class SpannerCatalog implements TableCatalog {
         Arrays.stream(schema.fields())
             .filter(
                 f ->
-                    f.metadata().contains(SPANNER_PRIMARY_KEY_TAG)
-                        && f.metadata().getBoolean(SPANNER_PRIMARY_KEY_TAG))
+                    f.metadata().contains(SpannerUtils.PRIMARY_KEY_TAG)
+                        && f.metadata().getBoolean(SpannerUtils.PRIMARY_KEY_TAG))
             .map(StructField::name)
             .collect(Collectors.toList());
 

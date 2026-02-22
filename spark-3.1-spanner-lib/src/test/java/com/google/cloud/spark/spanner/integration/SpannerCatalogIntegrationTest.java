@@ -101,7 +101,7 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     assertThat(table.schema().fields())
         .asList()
         .containsExactly(
-            new StructField("id", DataTypes.LongType, false, Metadata.empty()),
+            new StructField("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
             new StructField("name", DataTypes.StringType, true, Metadata.empty()),
             new StructField("value", DataTypes.DoubleType, true, Metadata.empty()));
   }
@@ -147,7 +147,7 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
       // Connector currently does not retrieve primary key metadata.
       StructType expectedSchema =
           new StructType()
-              .add("id", DataTypes.LongType, false)
+              .add("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA)
               .add("name", DataTypes.StringType, true);
       assertThat(loadedTable.schema()).isEqualTo(expectedSchema);
     } finally {

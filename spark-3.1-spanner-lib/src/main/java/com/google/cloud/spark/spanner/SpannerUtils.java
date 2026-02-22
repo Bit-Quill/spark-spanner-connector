@@ -96,6 +96,8 @@ public class SpannerUtils {
 
   public static final String COLUMN_TYPE = "col_type";
 
+  public static final String PRIMARY_KEY_TAG = "spanner.primaryKey";
+
   public static Long SECOND_TO_DAYS = 60 * 60 * 24L;
 
   private static final String SPARK_VERSION = org.apache.spark.package$.MODULE$.SPARK_VERSION();

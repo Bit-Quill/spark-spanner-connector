@@ -51,7 +51,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
 
   private final String projectId;
   private final SpannerTableSchema dbSchema;
-  private @Nullable StructType dfSchema;
+  private final @Nullable StructType dfSchema;
   private static final ImmutableSet<TableCapability> tableCapabilities =
       ImmutableSet.of(TableCapability.BATCH_READ, TableCapability.BATCH_WRITE);
   private final CaseInsensitiveStringMap properties;
@@ -63,84 +63,63 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   }
 
   public SpannerTable(CaseInsensitiveStringMap properties, StructType dfSchema) {
-    this.tableName = SpannerUtils.getRequiredOption(properties, "table");
-    this.projectId = SpannerUtils.getRequiredOption(properties, "projectId");
-    this.instanceId = SpannerUtils.getRequiredOption(properties, "instanceId");
-    this.databaseId = SpannerUtils.getRequiredOption(properties, "databaseId");
+    this(
+        SpannerUtils.getRequiredOption(properties, "projectId"),
+        SpannerUtils.getRequiredOption(properties, "instanceId"),
+        SpannerUtils.getRequiredOption(properties, "databaseId"),
+        SpannerUtils.getRequiredOption(properties, "table"),
+        properties,
+        dfSchema);
+  }
 
-    this.properties =
-        new CaseInsensitiveStringMap(
-            ImmutableMap.<String, String>builder()
-                .putAll(properties)
-                .putAll(getOpenLineageDatasetProperties())
-                .build());
-
-    try (Connection conn = SpannerUtils.connectionFromProperties(properties)) {
-      boolean isPostgreSql;
-      if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
-        isPostgreSql = false;
-      } else if (conn.getDialect().equals(Dialect.POSTGRESQL)) {
-        isPostgreSql = true;
-      } else {
-        throw new SpannerConnectorException(
-            SpannerErrorCode.DATABASE_DIALECT_NOT_SUPPORTED,
-            "The dialect used "
-                + conn.getDialect()
-                + " in the Spanner table "
-                + tableName
-                + " is not supported.");
-      }
-      // Still get the DB schema for validation.
-      this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);
-      this.dfSchema = dfSchema;
+  private boolean checkIsPostgreSql(Connection conn) {
+    boolean isPostgreSql;
+    if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
+      isPostgreSql = false;
+    } else if (conn.getDialect().equals(Dialect.POSTGRESQL)) {
+      isPostgreSql = true;
+    } else {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.DATABASE_DIALECT_NOT_SUPPORTED,
+          "The dialect used "
+              + conn.getDialect()
+              + " in the Spanner database "
+              + this.databaseId
+              + " is not supported.");
     }
+    return isPostgreSql;
   }
 
   public SpannerTable(
       String projectId,
       String instanceId,
       String databaseId,
-      String tableName,
-      CaseInsensitiveStringMap properties) {
+      String tableNameOption,
+      CaseInsensitiveStringMap properties,
+      StructType dfSchema) {
     Verify.verifyNotNull(projectId, "projectId");
     Verify.verifyNotNull(instanceId, "instanceId");
-    Verify.verifyNotNull(tableName, "tableName");
+    Verify.verifyNotNull(tableNameOption, "tableNameOption");
     Verify.verifyNotNull(properties, "properties");
 
-    this.tableName = tableName;
-    this.projectId = projectId;
-    this.instanceId = instanceId;
-    this.databaseId = databaseId;
+    try (Connection conn = SpannerUtils.connectionFromProperties(properties)) {
+        boolean isPostgreSql = checkIsPostgreSql(conn);
 
-    this.properties =
-        new CaseInsensitiveStringMap(
-            ImmutableMap.<String, String>builder()
-                .putAll(getOpenLineageDatasetProperties())
-                .putAll(properties)
-                .put("projectId", projectId)
-                .put("instanceId", instanceId)
-                .put("databaseId", databaseId)
-                .put("table", tableName)
-                .build());
+      this.tableName = isPostgreSql ? tableNameOption.toLowerCase() : tableNameOption;
+      this.projectId = projectId;
+      this.instanceId = instanceId;
+      this.databaseId = databaseId;
 
-    try (Connection conn =
-        SpannerUtils.connectionFromProperties(
-            projectId, instanceId, databaseId, properties.get("emulatorHost"))) {
-      boolean isPostgreSql;
-      if (conn.getDialect().equals(Dialect.GOOGLE_STANDARD_SQL)) {
-        isPostgreSql = false;
-      } else if (conn.getDialect().equals(Dialect.POSTGRESQL)) {
-        isPostgreSql = true;
-      } else {
-        throw new SpannerConnectorException(
-            SpannerErrorCode.DATABASE_DIALECT_NOT_SUPPORTED,
-            "The dialect used "
-                + conn.getDialect()
-                + " in the Spanner table "
-                + tableName
-                + " is not supported.");
-      }
+      this.properties =
+          new CaseInsensitiveStringMap(
+              ImmutableMap.<String, String>builder()
+                  .putAll(properties)
+                  .putAll(getOpenLineageDatasetProperties())
+                  .build());
+
+      // Still get the DB schema for validation.
       this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);
+      this.dfSchema = dfSchema;
     }
   }
 
