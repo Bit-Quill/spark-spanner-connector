@@ -15,6 +15,8 @@
 package com.google.cloud.spark.spanner.integration;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.lit;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -37,8 +39,9 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
-import org.apache.spark.sql.functions;
-import org.apache.spark.sql.types.*;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -226,43 +229,28 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
     initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
 
-    // 3. Create the updates DataFrame (only the 2 columns we care about)
-    StructType updateSchema =
-        new StructType(
-            new StructField[] {
-              DataTypes.createStructField("long_col", DataTypes.LongType, false),
-              DataTypes.createStructField("string_col", DataTypes.StringType, true)
-            });
+    // 3. Create the updates DataFrame.
+    // 1. Prepare the UPDATE: Filter for row 201 and update its string_col
+    // By filtering first, we can just use lit() to overwrite the column.
+    // This preserves the original values for bool_col, double_col, etc.
+    Dataset<Row> updatedRow201 =
+        initialDf
+            .filter(col("long_col").equalTo(201L))
+            .withColumn("string_col", lit("new twenty-one"));
 
-    List<Row> newRows =
+    // 2. Prepare the INSERT: Create row 301 from scratch using the full schema
+    // We pad the omitted columns with nulls to match the DSv2 table requirements.
+    List<Row> insertRows =
         Arrays.asList(
-            RowFactory.create(201L, "new twenty-one"), // Update 201
-            RowFactory.create(203L, "new twenty-three") // Insert 203
-            );
-    Dataset<Row> newDf = spark.createDataFrame(newRows, updateSchema);
+            RowFactory.create(301L, "new thirty-one", null, null, null, null, null, null));
+    Dataset<Row> insertedRow301 = spark.createDataFrame(insertRows, fullSchema);
 
-    // 4.Pad the missing columns with NULLs and align the schema order.
-    // This satisfies Catalyst's Analyzer, allowing the V2 append to proceed.
-    Dataset<Row> paddedNewDf =
-        newDf
-            .withColumn("bool_col", functions.lit(null).cast(DataTypes.BooleanType))
-            .withColumn("double_col", functions.lit(null).cast(DataTypes.DoubleType))
-            .withColumn("timestamp_col", functions.lit(null).cast(DataTypes.TimestampType))
-            .withColumn("date_col", functions.lit(null).cast(DataTypes.DateType))
-            .withColumn("bytes_col", functions.lit(null).cast(DataTypes.BinaryType))
-            .withColumn("numeric_col", functions.lit(null).cast(DataTypes.createDecimalType(38, 9)))
-            .select(
-                "long_col",
-                "string_col",
-                "bool_col",
-                "double_col",
-                "timestamp_col",
-                "date_col",
-                "bytes_col",
-                "numeric_col");
-
+    // 3. Combine them into your final updatesDs
+    // unionByName is generally safer than union() as it matches columns by name
+    // rather than order, preventing accidental data shifts.
+    Dataset<Row> updatesDs = updatedRow201.unionByName(insertedRow301);
     // Write the updates
-    paddedNewDf.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
+    updatesDs.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
 
     // 5. Verify the final state
     Dataset<Row> finalDf =
@@ -271,7 +259,7 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
             .format("cloud-spanner")
             .options(props)
             .load()
-            .filter("long_col IN (201, 202, 203)");
+            .filter("long_col IN (201, 202, 301)");
 
     assertEquals(3, finalDf.count());
 
@@ -281,7 +269,7 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
     Row row201 = finalRows.get(201L);
     Row row202 = finalRows.get(202L);
-    Row row203 = finalRows.get(203L);
+    Row row301 = finalRows.get(301L);
 
     // Verify row 201: string_col was updated, but all other columns remained untouched (Partial
     // Update)
@@ -294,8 +282,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     assertThat(row202.getBoolean(2)).isEqualTo(false);
 
     // Verify row 203: Inserted, and Spanner/Spark correctly assigned NULLs to the omitted columns
-    assertThat(row203.getString(1)).isEqualTo("new twenty-three");
-    assertTrue(row203.isNullAt(2)); // bool_col should be null
+    assertThat(row301.getString(1)).isEqualTo("new thirty-one");
+    assertTrue(row301.isNullAt(2)); // bool_col should be null
   }
 
   @Test
