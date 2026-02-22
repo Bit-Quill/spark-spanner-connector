@@ -31,7 +31,7 @@ public class SpannerTableSchema {
   public final String name;
   public final StructType schema;
 
-    static Statement buildSchemaQuery(String tableName, boolean isPostgreSql) {
+  static Statement buildSchemaQuery(String tableName, boolean isPostgreSql) {
     if (isPostgreSql) {
       return Statement.newBuilder(POSTGRESQL_SCHEMA).bind("p1").to(tableName).build();
     } else {
@@ -42,7 +42,7 @@ public class SpannerTableSchema {
   public SpannerTableSchema(Connection conn, String tableName, boolean isPostgreSql) {
     this.name = tableName;
     this.columns = new HashMap<>();
-      // 1. Get the primary keys for the table.
+    // 1. Get the primary keys for the table.
     Set<String> primaryKeys = getPrimaryKeys(conn, tableName, isPostgreSql);
 
     // 2. Get the schema of the table.
