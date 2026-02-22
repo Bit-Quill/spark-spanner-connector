@@ -20,6 +20,7 @@ import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.apache.spark.sql.connector.catalog.Identifier;
 
 public interface SpannerInformationSchema {
@@ -87,7 +88,7 @@ class PostgresSpannerInformationSchema implements SpannerInformationSchema {
         Statement.newBuilder(
                 "SELECT COUNT(1) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1")
             .bind("p1")
-            .to(tableName)
+            .to(tableName.toLowerCase(Locale.ROOT))
             .build();
     try (ResultSet resultSet = readContext.executeQuery(statement)) {
       return resultSet.next() && resultSet.getLong(0) > 0;
