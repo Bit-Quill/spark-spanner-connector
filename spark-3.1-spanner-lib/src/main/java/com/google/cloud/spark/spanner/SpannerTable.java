@@ -19,6 +19,7 @@ import com.google.cloud.spanner.connection.Connection;
 import com.google.common.base.Verify;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -99,10 +100,12 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       StructType dfSchema) {
     Verify.verifyNotNull(projectId, "projectId");
     Verify.verifyNotNull(instanceId, "instanceId");
+    Verify.verifyNotNull(databaseId, "databaseId");
     Verify.verifyNotNull(tableNameOption, "tableNameOption");
     Verify.verifyNotNull(properties, "properties");
 
-    try (Connection conn = SpannerUtils.connectionFromProperties(properties)) {
+    try (Connection conn =
+        SpannerUtils.connectionFromProperties(projectId, instanceId, databaseId, null)) {
       boolean isPostgreSql = checkIsPostgreSql(conn);
 
       this.tableName = isPostgreSql ? tableNameOption.toLowerCase() : tableNameOption;
@@ -110,12 +113,14 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       this.instanceId = instanceId;
       this.databaseId = databaseId;
 
-      this.properties =
-          new CaseInsensitiveStringMap(
-              ImmutableMap.<String, String>builder()
-                  .putAll(properties)
-                  .putAll(getOpenLineageDatasetProperties())
-                  .build());
+      Map<String, String> combinedProps = new HashMap<>(properties.asCaseSensitiveMap());
+      combinedProps.putAll(properties);
+      combinedProps.putAll(getOpenLineageDatasetProperties());
+      combinedProps.put("databaseId", databaseId);
+      combinedProps.put("projectId", projectId);
+      combinedProps.put("instanceId", instanceId);
+      combinedProps.put("table", tableName);
+      this.properties = new CaseInsensitiveStringMap(combinedProps);
 
       // Still get the DB schema for validation.
       this.dbSchema = new SpannerTableSchema(conn, tableName, isPostgreSql);

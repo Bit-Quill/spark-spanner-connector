@@ -21,6 +21,7 @@ import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadContext;
 import com.google.cloud.spanner.Spanner;
+import com.google.common.base.Verify;
 import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
 import java.util.Arrays;
 import java.util.Collections;
@@ -84,6 +85,9 @@ public class SpannerCatalog implements TableCatalog {
     String instanceId = namespace[1];
     String databaseId = namespace[2];
 
+    Verify.verifyNotNull(projectId, "projectId");
+    Verify.verifyNotNull(instanceId, "instanceId");
+    Verify.verifyNotNull(databaseId, "databaseId");
     DatabaseClient dbClient =
         spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
 
@@ -111,19 +115,24 @@ public class SpannerCatalog implements TableCatalog {
   }
 
   protected Table factorySpannerTable(Identifier ident) {
-    return new SpannerTable(
-        ident.namespace()[0],
-        ident.namespace()[1],
-        ident.namespace()[2],
-        ident.name(),
-        this.options,
-        null);
+    String projectId = ident.namespace()[0];
+    String instanceId = ident.namespace()[1];
+    String databaseId = ident.namespace()[2];
+    String table = ident.name();
+
+    Verify.verifyNotNull(projectId, "projectId");
+    Verify.verifyNotNull(instanceId, "instanceId");
+    Verify.verifyNotNull(databaseId, "databaseId");
+    Verify.verifyNotNull(table, "table");
+
+    return new SpannerTable(projectId, instanceId, databaseId, table, this.options, null);
   }
 
   @Override
   public Table createTable(
       Identifier ident, StructType schema, Transform[] partitions, Map<String, String> properties)
       throws TableAlreadyExistsException {
+
     if (tableExists(ident)) {
       throw new TableAlreadyExistsException(ident);
     }

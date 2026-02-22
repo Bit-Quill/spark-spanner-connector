@@ -33,6 +33,7 @@ import com.google.cloud.spanner.Value;
 import com.google.cloud.spanner.connection.Connection;
 import com.google.cloud.spanner.connection.ConnectionOptions;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Verify;
 import com.google.common.io.CharStreams;
 import com.google.common.io.Closeables;
 import java.io.IOException;
@@ -174,6 +175,11 @@ public class SpannerUtils {
 
   public static Connection connectionFromProperties(
       String projectId, String instanceId, String databaseId, @Nullable String emulatorHost) {
+
+    Verify.verifyNotNull(projectId, "projectId");
+    Verify.verifyNotNull(instanceId, "instanceId");
+    Verify.verifyNotNull(databaseId, "databaseId");
+
     String connUriPrefix = "cloudspanner:";
     if (emulatorHost != null) {
       connUriPrefix = "cloudspanner://" + emulatorHost;
