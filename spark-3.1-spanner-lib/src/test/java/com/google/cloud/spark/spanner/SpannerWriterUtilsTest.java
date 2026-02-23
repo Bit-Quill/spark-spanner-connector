@@ -17,16 +17,20 @@ package com.google.cloud.spark.spanner;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.JacksonException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.ByteArray;
 import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Mutation;
-import com.google.cloud.spanner.Struct;
-import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.function.BiConsumer;
@@ -66,35 +70,7 @@ public class SpannerWriterUtilsTest {
           .add("ts_field", DataTypes.TimestampType)
           .add("dt_field", DataTypes.DateType)
           .add("decimal_field", new DecimalType(38, 9));
-  private static final Type typeStruct =
-      Type.struct(
-          Type.StructField.of("long_field", Type.int64()),
-          Type.StructField.of("str_field", Type.string()),
-          Type.StructField.of("bool_field", Type.bool()),
-          Type.StructField.of("double_field", Type.float64()),
-          Type.StructField.of("binary_field", Type.bytes()),
-          Type.StructField.of("ts_field", Type.timestamp()),
-          Type.StructField.of("dt_field", Type.date()),
-          Type.StructField.of("decimal_field", Type.numeric()));
-  private static final Struct testStruct =
-      Struct.newBuilder()
-          .set("long_field")
-          .to(100L)
-          .set("str_field")
-          .to("str_value")
-          .set("bool_field")
-          .to(true)
-          .set("double_field")
-          .to(95.5)
-          .set("binary_field")
-          .to(ByteArray.copyFrom(BYTE_DATA))
-          .set("ts_field")
-          .to(Timestamp.ofTimeMicroseconds(1704067200000000L))
-          .set("dt_field")
-          .to(Date.fromYearMonthDay(2024, 1, 1))
-          .set("decimal_field")
-          .to(jbd)
-          .build();
+
   private static final Object[] structValues =
       new Object[] {
         100L,
@@ -107,6 +83,32 @@ public class SpannerWriterUtilsTest {
         decimal
       };
   private static final InternalRow testInternalRow = new GenericInternalRow(structValues);
+
+  private static String createJSONStruct() {
+    try {
+      DateTimeFormatter formatter =
+          DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+      Timestamp ts = Timestamp.ofTimeMicroseconds(1704067200000000L);
+      ObjectMapper mapper = new ObjectMapper();
+      ObjectNode obj =
+          mapper
+              .createObjectNode()
+              //              .put("id", 1)
+              .put("long_field", 100L)
+              .put("str_field", "str_value")
+              .put("bool_field", true)
+              .put("double_field", 95.5)
+              .put("binary_field", Base64.getEncoder().encodeToString(BYTE_DATA))
+              .put("ts_field", formatter.format(ts.toSqlTimestamp().toInstant()))
+              .put("dt_field", Date.fromYearMonthDay(2024, 1, 1).toString())
+              .put("decimal_field", jbd);
+
+      return mapper.writeValueAsString(obj);
+    } catch (JacksonException e) {
+      Assert.fail();
+      return null; // TODO: needs clean up
+    }
+  }
 
   @RunWith(Parameterized.class)
   public static class ScalarTests {
@@ -129,7 +131,7 @@ public class SpannerWriterUtilsTest {
             },
             {"dt", DataTypes.DateType, 19723, Value.date(Date.fromYearMonthDay(2024, 1, 1))},
             {"decimal", new DecimalType(38, 9), decimal, Value.numeric(jbd)},
-            {"struct", structType, testInternalRow, Value.struct(typeStruct, testStruct)}
+            {"struct", structType, testInternalRow, Value.json(createJSONStruct())}
           });
     }
 
@@ -201,7 +203,7 @@ public class SpannerWriterUtilsTest {
             {"timestamp", DataTypes.TimestampType, Value.timestamp(null)},
             {"date", DataTypes.DateType, Value.date(null)},
             {"decimal", new DecimalType(38, 9), Value.numeric(null)},
-            {"struct", new StructType(), Value.struct(Struct.newBuilder().build())}, //            {
+            {"struct", new StructType(), Value.json(null)}, //            {
             {
               "long_array",
               DataTypes.createArrayType(DataTypes.LongType),
@@ -234,11 +236,7 @@ public class SpannerWriterUtilsTest {
               DataTypes.createArrayType(new DecimalType(38, 9)),
               Value.numericArray(null)
             },
-            {
-              "struct_array",
-              DataTypes.createArrayType(new StructType()),
-              Value.structArray(Type.struct(), null)
-            }
+            {"struct_array", DataTypes.createArrayType(new StructType()), Value.jsonArray(null)}
           });
     }
 
@@ -412,7 +410,7 @@ public class SpannerWriterUtilsTest {
               "struct_array",
               structType,
               new InternalRow[] {testInternalRow}, // Use InternalRow instead of Spanner Struct
-              Value.structArray(typeStruct, Collections.singletonList(testStruct)),
+              Value.jsonArray(Collections.singletonList(createJSONStruct())),
               (BiConsumer<ArrayData, Object>)
                   (ad, d) ->
                       setupArrayMock(

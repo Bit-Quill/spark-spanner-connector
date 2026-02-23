@@ -17,18 +17,19 @@ import com.google.cloud.ByteArray;
 import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Mutation;
-import com.google.cloud.spanner.Struct;
 import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
+import java.io.CharArrayWriter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.json.JSONOptions;
+import org.apache.spark.sql.catalyst.json.JacksonGenerator;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
@@ -36,6 +37,7 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.DecimalType;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import scala.collection.immutable.Map$;
 
 public class SpannerWriterUtils {
 
@@ -205,19 +207,21 @@ public class SpannerWriterUtils {
     return builder.build();
   }
 
-  private static Struct internalRowToStruct(InternalRow record, StructType schema) {
-    final Struct.Builder builder = Struct.newBuilder();
+  private static String internalRowToJSON(InternalRow row, StructType schema) {
+    // 1. Prepare a writer to hold the output
+    CharArrayWriter writer = new CharArrayWriter();
 
-    for (int i = 0; i < schema.length(); i++) {
-      final StructField field = schema.fields()[i];
-      final DataType fieldType = field.dataType();
-      final String fieldName = field.name();
+    // 2. Define JSON options (empty Scala Map for defaults)
+    JSONOptions options = new JSONOptions(Map$.MODULE$.empty(), "UTC", "");
 
-      Value spannerValue = convertField(record, i, fieldType);
-      builder.set(fieldName).to(spannerValue);
-    }
+    // 3. Initialize the JacksonGenerator with the schema
+    JacksonGenerator generator = new JacksonGenerator(schema, writer, options);
 
-    return builder.build();
+    // 4. Write the row and close to flush the buffer
+    generator.write(row);
+    generator.close();
+
+    return writer.toString();
   }
 
   // Helper method to resolve the strategy
@@ -239,14 +243,14 @@ public class SpannerWriterUtils {
     }
 
     if (type instanceof StructType) {
+      // Spark StructTypes are stored as JSON elements in Spanner.
       // A Struct instance in Spanner always represents a non-NULL value.
       if (row.isNullAt(index)) {
-        return Value.struct(Struct.newBuilder().build()); // TODO: How should this be handled.
+        return Value.json(null);
       }
 
       StructType structType = (StructType) type;
-      return Value.struct(
-          internalRowToStruct(row.getStruct(index, structType.length()), structType));
+      return Value.json(internalRowToJSON(row.getStruct(index, structType.length()), structType));
     }
 
     if (type instanceof ArrayType) {
@@ -267,16 +271,17 @@ public class SpannerWriterUtils {
       }
 
       if (elementType instanceof StructType) {
+        // Spark StructTypes are stored as JSON elements in Spanner.
         StructType structType = (StructType) elementType;
 
         if (row.isNullAt(index)) {
-          return Value.structArray(Type.struct(), null);
+          return Value.jsonArray(null);
         }
 
         final ArrayData arrayData = row.getArray(index);
         final int numElements = arrayData.numElements();
         if (numElements == 0) return Value.structArray(Type.struct(), new ArrayList<>());
-        List<Struct> convertedList = new ArrayList<>(numElements);
+        List<String> convertedList = new ArrayList<>(numElements);
 
         for (int j = 0; j < numElements; j++) {
           if (arrayData.isNullAt(j)) {
@@ -284,18 +289,11 @@ public class SpannerWriterUtils {
           } else {
             // Uses specialized Spark getters (getLong, getDouble, etc.)
             convertedList.add(
-                internalRowToStruct(arrayData.getStruct(j, structType.length()), structType));
+                internalRowToJSON(arrayData.getStruct(j, structType.length()), structType));
           }
         }
 
-        // Find Spanner schema from first non-null struct array element.
-        Type itemType =
-            convertedList.stream()
-                .filter(Objects::nonNull)
-                .findFirst()
-                .map(Struct::getType)
-                .orElse(Type.struct());
-        return Value.structArray(itemType, convertedList);
+        return Value.jsonArray(convertedList);
       }
     }
 
