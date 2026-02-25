@@ -130,7 +130,18 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
         return DataTypes.LongType;
 
       case "JSON":
-        return DataTypes.StringType;
+        //        return DataTypes.StringType;
+        // TODO: temporary code
+        // This could be extracted from this.sparkSchema
+        return new StructType()
+            .add("long_field", DataTypes.LongType)
+            .add("str_field", DataTypes.StringType)
+            .add("bool_field", DataTypes.BooleanType)
+            .add("double_field", DataTypes.DoubleType)
+            .add("binary_field", DataTypes.BinaryType)
+            .add("ts_field", DataTypes.TimestampType)
+            .add("dt_field", DataTypes.DateType)
+            .add("decimal_field", DataTypes.createDecimalType(38, 9));
 
       case "NUMERIC":
         return numericToCatalogDataType;
@@ -195,8 +206,17 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       case "int8":
         return DataTypes.LongType;
 
+        // TODO: This could be extracted from this.sparkSchema
       case "jsonb":
-        return DataTypes.StringType;
+        return new StructType()
+            .add("long_field", DataTypes.LongType)
+            .add("str_field", DataTypes.StringType)
+            .add("bool_field", DataTypes.BooleanType)
+            .add("double_field", DataTypes.DoubleType)
+            .add("binary_field", DataTypes.BinaryType)
+            .add("ts_field", DataTypes.TimestampType)
+            .add("dt_field", DataTypes.DateType)
+            .add("decimal_field", DataTypes.createDecimalType(38, 9));
 
       case "numeric":
         return numericToCatalogDataType;

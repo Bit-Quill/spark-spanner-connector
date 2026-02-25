@@ -123,7 +123,7 @@ CREATE TABLE write_struct_test_table (
     date_col DATE,
     bytes_col BYTES(MAX),
     numeric_col NUMERIC,
-    struct_col STRUCT<long_field INT64, str_field STRING(MAX), bool_field BOOL, double_field FLOAT64, binary_field BYTES(MAX), ts_field TIMESTAMP, dt_field DATE, decimal_field NUMERIC>
+    struct_col JSON
     ) PRIMARY KEY(long_col);
 
 CREATE TABLE write_array_test_table (
