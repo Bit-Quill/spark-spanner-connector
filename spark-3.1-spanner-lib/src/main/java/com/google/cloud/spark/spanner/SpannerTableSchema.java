@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.MetadataBuilder;
 import org.apache.spark.sql.types.StructField;
@@ -22,9 +23,9 @@ public class SpannerTableSchema {
           + "FROM INFORMATION_SCHEMA.COLUMNS WHERE ";
   private static final String QUERY_SUFFIX = " ORDER BY ORDINAL_POSITION";
   private static final String GOOGLESQL_SCHEMA =
-      QUERY_PREFIX + "UPPER(TABLE_NAME)=UPPER(@tableName)" + QUERY_SUFFIX;
+      QUERY_PREFIX + "TABLE_SCHEMA = '' AND UPPER(TABLE_NAME)=UPPER(@tableName)" + QUERY_SUFFIX;
   private static final String POSTGRESQL_SCHEMA =
-      QUERY_PREFIX + "columns.table_name=$1" + QUERY_SUFFIX;
+      QUERY_PREFIX + "columns.table_schema='public' AND columns.table_name=$1" + QUERY_SUFFIX;
 
   private final Map<String, StructField> columns;
 
@@ -33,14 +34,18 @@ public class SpannerTableSchema {
 
   static Statement buildSchemaQuery(String tableName, boolean isPostgreSql) {
     if (isPostgreSql) {
-      return Statement.newBuilder(POSTGRESQL_SCHEMA).bind("p1").to(tableName).build();
+      return Statement.newBuilder(POSTGRESQL_SCHEMA)
+          .bind("p1")
+          .to(tableName.toLowerCase(Locale.ROOT))
+          .build();
     } else {
       return Statement.newBuilder(GOOGLESQL_SCHEMA).bind("tableName").to(tableName).build();
     }
   }
 
   public SpannerTableSchema(Connection conn, String tableName, boolean isPostgreSql) {
-    this.name = tableName;
+    String resolvedSchema = resolveSchemaName(null, isPostgreSql);
+    this.name = tableReference(resolvedSchema, tableName, isPostgreSql);
     this.columns = new HashMap<>();
     // 1. Get the primary keys for the table.
     Set<String> primaryKeys = getPrimaryKeys(conn, tableName, isPostgreSql);
@@ -74,13 +79,14 @@ public class SpannerTableSchema {
           "SELECT kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc "
               + "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS kcu "
               + "ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND tc.TABLE_NAME = kcu.TABLE_NAME "
-              + "WHERE tc.TABLE_NAME = $1 AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND tc.TABLE_SCHEMA = 'public' "
+              + "WHERE tc.TABLE_SCHEMA = 'public' AND tc.TABLE_NAME = $1 AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
               + "ORDER BY kcu.ORDINAL_POSITION";
       return Statement.newBuilder(sql).bind("p1").to(tableName.toLowerCase(Locale.ROOT)).build();
     }
     String sql =
         "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.INDEX_COLUMNS "
-            + "WHERE INDEX_NAME = 'PRIMARY_KEY' AND UPPER(TABLE_NAME) = UPPER(@tableName)";
+            + "WHERE INDEX_NAME = 'PRIMARY_KEY' "
+            + "AND UPPER(TABLE_NAME) = UPPER(@tableName)";
     return Statement.newBuilder(sql).bind("tableName").to(tableName).build();
   }
 
@@ -132,5 +138,22 @@ public class SpannerTableSchema {
 
   public static boolean isJsonb(String spannerStrType) {
     return "jsonb".equalsIgnoreCase(spannerStrType.trim());
+  }
+
+  private static String resolveSchemaName(@Nullable String schemaName, boolean isPostgreSql) {
+    if (schemaName != null) {
+      return schemaName;
+    }
+    return isPostgreSql ? "public" : "";
+  }
+
+  private static String tableReference(String schemaName, String tableName, boolean isPostgreSql) {
+    if (schemaName == null || schemaName.isEmpty()) {
+      return tableName;
+    }
+    if (isPostgreSql) {
+      return String.format("\"%s\".\"%s\"", schemaName, tableName);
+    }
+    return String.format("`%s`.`%s`", schemaName, tableName);
   }
 }

@@ -1,4 +1,4 @@
-// Copyright 2026 Google LLC
+// Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,16 +18,26 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.google.api.gax.longrunning.OperationFuture;
+import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadContext;
+import com.google.cloud.spanner.ReadOnlyTransaction;
 import com.google.cloud.spanner.Spanner;
+import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -43,9 +53,7 @@ import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
@@ -60,21 +68,21 @@ public class SpannerCatalogTest {
     return Arrays.asList(Dialect.GOOGLE_STANDARD_SQL, Dialect.POSTGRESQL);
   }
 
-  @Rule public ExpectedException thrown = ExpectedException.none();
-
   private SpannerCatalog catalog;
   private final Dialect dialect;
 
   @Mock private Spanner spanner;
   @Mock private DatabaseClient dbClient;
   @Mock private SpannerInformationSchema spannerInfoSchema;
+  @Mock private DatabaseAdminClient dbAdminClient;
+  @Mock private OperationFuture<Void, UpdateDatabaseDdlMetadata> ddlFuture;
 
   public SpannerCatalogTest(Dialect dialect) {
     this.dialect = dialect;
   }
 
   @Before
-  public void setUp() {
+  public void setUp() throws Exception {
     MockitoAnnotations.openMocks(this);
 
     catalog =
@@ -90,10 +98,18 @@ public class SpannerCatalogTest {
           }
 
           @Override
-          protected SpannerTable factorySpannerTable(Identifier ident) {
+          protected Table factorySpannerTable(String tableName) {
             SpannerTable mockSpannerTable = mock(SpannerTable.class);
-            when(mockSpannerTable.name()).thenReturn(ident.name());
+            when(mockSpannerTable.name()).thenReturn(tableName);
             return mockSpannerTable;
+          }
+
+          @Override
+          protected Table factorySpannerGraph(
+              String schemaName, String graphName, String graphType) {
+            Table mockGraph = mock(Table.class);
+            when(mockGraph.name()).thenReturn(graphName + ":" + graphType);
+            return mockGraph;
           }
         };
 
@@ -105,10 +121,22 @@ public class SpannerCatalogTest {
     CaseInsensitiveStringMap options = new CaseInsensitiveStringMap(opts);
     catalog.initialize("test-catalog", options);
 
-    when(spanner.getDatabaseClient(any(DatabaseId.class))).thenReturn(dbClient);
+    when(spannerInfoSchema.resolveIdentifier(any()))
+        .thenAnswer(
+            (invocation) -> {
+              Identifier ident = invocation.getArgument(0);
+              SpannerInformationSchema realImpl = SpannerInformationSchema.create(dialect);
+              return realImpl.resolveIdentifier(ident);
+            });
     when(dbClient.getDialect()).thenReturn(dialect);
-    ReadContext mockReadContext = mock(ReadContext.class);
+    ReadOnlyTransaction mockReadContext = mock(ReadOnlyTransaction.class);
+    when(dbClient.readOnlyTransaction()).thenReturn(mockReadContext);
     when(dbClient.singleUse()).thenReturn(mockReadContext);
+    when(spanner.getDatabaseAdminClient()).thenReturn(dbAdminClient);
+    when(spanner.getDatabaseClient(any(DatabaseId.class))).thenReturn(dbClient);
+    when(dbAdminClient.updateDatabaseDdl(anyString(), anyString(), anyList(), isNull()))
+        .thenReturn(ddlFuture);
+    when(ddlFuture.get()).thenReturn(null);
   }
 
   @Test
@@ -118,35 +146,36 @@ public class SpannerCatalogTest {
 
   @Test
   public void listTablesShouldReturnTables() {
-    String[] namespace = new String[] {"p", "i", "d"};
+    String[] namespace = new String[] {};
     Identifier[] expectedTables = {Identifier.of(namespace, "t1"), Identifier.of(namespace, "t2")};
     when(spannerInfoSchema.listTables(any(ReadContext.class), any(String[].class)))
         .thenReturn(expectedTables);
+    when(spannerInfoSchema.listGraphs(any(ReadContext.class))).thenReturn(Collections.emptyList());
 
     Identifier[] tables = catalog.listTables(namespace);
+    verify(spannerInfoSchema).listTables(any(ReadContext.class), eq(namespace));
     assertArrayEquals(expectedTables, tables);
   }
 
   @Test
   public void listTablesShouldReturnEmptyForInvalidNamespace() {
-    String[] namespace = new String[] {"p", "i"};
+    String[] namespace = new String[] {"s1", "s2"};
     Identifier[] tables = catalog.listTables(namespace);
     assertEquals(0, tables.length);
   }
 
   @Test
-  public void loadTableShouldThrowNoSuchTableException() throws NoSuchTableException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "non_existent");
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
+  public void loadTableShouldThrowNoSuchTableException() {
+    Identifier ident = Identifier.of(new String[] {}, "non_existent");
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("non_existent")))
         .thenReturn(false);
-    thrown.expect(NoSuchTableException.class);
-    catalog.loadTable(ident);
+    assertThrows(NoSuchTableException.class, () -> catalog.loadTable(ident));
   }
 
   @Test
   public void loadTableShouldReturnSpannerTable() throws NoSuchTableException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "t1");
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
+    Identifier ident = Identifier.of(new String[] {}, "t1");
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("t1"))).thenReturn(true);
     Table table = catalog.loadTable(ident);
     assertNotNull(table);
     assertTrue(table instanceof SpannerTable);
@@ -154,77 +183,149 @@ public class SpannerCatalogTest {
   }
 
   @Test
-  public void loadTableShouldThrowExceptionForInvalidNamespace() throws NoSuchTableException {
-    Identifier ident = Identifier.of(new String[] {"p", "i"}, "t1");
-    thrown.expect(SpannerConnectorException.class);
-    catalog.loadTable(ident);
+  public void loadGraphShouldReturnGraphTable() throws NoSuchTableException {
+    if (dialect == Dialect.POSTGRESQL) {
+      return;
+    }
+    Identifier ident = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    when(spannerInfoSchema.graphExists(any(ReadContext.class), eq("MusicGraph"))).thenReturn(true);
+
+    Table table = catalog.loadTable(ident);
+    assertNotNull(table);
+    assertEquals("MusicGraph:node", table.name());
+  }
+
+  @Test
+  public void loadGraphShouldThrowExceptionForSchemaQualifiedGraphIdentifier() {
+    Identifier ident = Identifier.of(new String[] {"custom_schema", "graph", "MusicGraph"}, "edge");
+    assertThrows(SpannerConnectorException.class, () -> catalog.loadTable(ident));
+  }
+
+  @Test
+  public void loadTableShouldThrowExceptionForInvalidNamespace() {
+    Identifier ident = Identifier.of(new String[] {"a", "b"}, "t1");
+    assertThrows(SpannerConnectorException.class, () -> catalog.loadTable(ident));
+  }
+
+  @Test
+  public void loadTableShouldThrowExceptionForInvalidGraphType() {
+    Identifier ident = Identifier.of(new String[] {"graph", "MusicGraph"}, "vertex");
+    assertThrows(SpannerConnectorException.class, () -> catalog.loadTable(ident));
   }
 
   @Test
   public void tableExistsShouldReturnTrue() {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "t1");
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
+    Identifier ident = Identifier.of(new String[] {}, "t1");
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("t1"))).thenReturn(true);
     assertTrue(catalog.tableExists(ident));
   }
 
   @Test
   public void tableExistsShouldReturnFalse() {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "non_existent");
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
+    Identifier ident = Identifier.of(new String[] {}, "non_existent");
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("non_existent")))
         .thenReturn(false);
     assertFalse(catalog.tableExists(ident));
   }
 
   @Test
+  public void graphExistsShouldReturnTrue() {
+    if (dialect == Dialect.POSTGRESQL) {
+      return;
+    }
+    Identifier ident = Identifier.of(new String[] {"graph", "MusicGraph"}, "edge");
+    when(spannerInfoSchema.graphExists(any(ReadContext.class), eq("MusicGraph"))).thenReturn(true);
+    assertTrue(catalog.tableExists(ident));
+  }
+
+  @Test
   public void tableExistsShouldReturnFalseForInvalidNamespace() {
-    Identifier ident = Identifier.of(new String[] {"p", "i"}, "t1");
+    Identifier ident = Identifier.of(new String[] {"a", "b"}, "t1");
     assertFalse(catalog.tableExists(ident));
   }
 
   @Test
-  public void createTableShouldThrowTableAlreadyExistsException()
-      throws TableAlreadyExistsException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "existing_table");
-    StructType schema = new StructType();
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
-    thrown.expect(TableAlreadyExistsException.class);
-    catalog.createTable(ident, schema, null, Collections.emptyMap());
+  public void tableExistsShouldReturnFalseForInvalidGraphIdentifierType() {
+    Identifier ident = Identifier.of(new String[] {"graph", "MusicGraph"}, "vertex");
+    assertFalse(catalog.tableExists(ident));
   }
 
   @Test
-  public void createTableShouldThrowExceptionOnNoPrimaryKey() throws TableAlreadyExistsException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "no_pk_table");
+  public void createTableShouldThrowTableAlreadyExistsException() {
+    Identifier ident = Identifier.of(new String[] {}, "existing_table");
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              new StructField("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              new StructField("name", DataTypes.StringType, true, Metadata.empty())
+            });
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("existing_table")))
+        .thenReturn(true);
+    assertThrows(
+        TableAlreadyExistsException.class,
+        () -> catalog.createTable(ident, schema, null, Collections.emptyMap()));
+  }
+
+  @Test
+  public void createTableShouldThrowExceptionOnNoPrimaryKey() {
+    Identifier ident = Identifier.of(new String[] {}, "no_pk_table");
     StructType schema =
         new StructType(
             new StructField[] {
               new StructField("id", DataTypes.LongType, false, Metadata.empty()),
               new StructField("name", DataTypes.StringType, true, Metadata.empty())
             });
-    when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
+    when(spannerInfoSchema.tableExists(any(ReadContext.class), eq("no_pk_table")))
         .thenReturn(false);
+    assertThrows(
+        SpannerConnectorException.class,
+        () -> catalog.createTable(ident, schema, null, Collections.emptyMap()));
+  }
 
-    thrown.expect(SpannerConnectorException.class);
-    thrown.expectMessage(
-        "No primary key found for table no_pk_table. Please specify at least one primary key column.");
+  @Test
+  public void createTableShouldRejectGraphIdentifier() {
+    Identifier graphIdent = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    assertThrows(
+        SpannerConnectorException.class,
+        () -> catalog.createTable(graphIdent, new StructType(), null, Collections.emptyMap()));
+  }
 
-    catalog.createTable(ident, schema, null, Collections.emptyMap());
+  @Test
+  public void createTableShouldRejectSchemaQualifiedIdentifier() {
+    Identifier ident = Identifier.of(new String[] {"custom_schema"}, "new_table");
+    assertThrows(
+        SpannerConnectorException.class,
+        () -> catalog.createTable(ident, new StructType(), null, Collections.emptyMap()));
+  }
+
+  @Test
+  public void dropTableShouldRejectGraphIdentifier() {
+    Identifier graphIdent = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    assertThrows(SpannerConnectorException.class, () -> catalog.dropTable(graphIdent));
+  }
+
+  @Test
+  public void dropTableShouldRejectSchemaQualifiedIdentifier() {
+    Identifier ident = Identifier.of(new String[] {"custom_schema"}, "existing_table");
+    assertThrows(SpannerConnectorException.class, () -> catalog.dropTable(ident));
   }
 
   @Test
   public void alterTableShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null);
+    assertThrows(
+        UnsupportedOperationException.class,
+        () ->
+            catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null));
   }
 
   @Test
   public void renameTableShouldThrowException() {
-    thrown.expect(UnsupportedOperationException.class);
-    catalog.renameTable(null, null);
+    assertThrows(UnsupportedOperationException.class, () -> catalog.renameTable(null, null));
   }
 
   @Test
   public void testToDdl() {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "my_table");
+    Identifier ident = Identifier.of(new String[] {}, "my_table");
     StructType schema =
         new StructType(
             new StructField[] {

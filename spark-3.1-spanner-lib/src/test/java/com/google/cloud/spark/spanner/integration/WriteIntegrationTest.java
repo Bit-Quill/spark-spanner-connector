@@ -63,6 +63,11 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     this.usePostgresSql = usePostgresSql;
   }
 
+  @Override
+  protected Map<String, String> connectionProperties() {
+    return connectionProperties(usePostgresSql);
+  }
+
   @Test
   public void testWriteWithNulls() {
     StructType schema =
@@ -635,7 +640,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
   @Test
   public void testErrorIfExists() {
-
+    String tableName = TestData.WRITE_TABLE_NAME + "_EIE";
+    spark.sql("DROP TABLE IF EXISTS spanner." + tableName);
     // 1. Write initial data.
 
     StructType schema =
@@ -668,7 +674,7 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
     Map<String, String> props = connectionProperties(usePostgresSql);
 
-    props.put("table", TestData.WRITE_TABLE_NAME + "_EIE");
+    props.put("table", tableName);
 
     initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
 

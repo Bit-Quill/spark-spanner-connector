@@ -90,6 +90,11 @@ public abstract class FunctionsAndExpressionsIntegrationTestBase
     this.isPostgreSql = isPostgreSql;
   }
 
+  @Override
+  protected Map<String, String> connectionProperties() {
+    return connectionProperties(this.isPostgreSql);
+  }
+
   public Dataset<Row> readFromTable(String table) {
     Map<String, String> props = this.connectionProperties(isPostgreSql);
     return spark

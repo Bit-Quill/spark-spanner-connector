@@ -44,7 +44,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier = provider.extractIdentifier(options);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier);
   }
 
   @Test
@@ -62,7 +62,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier = provider.extractIdentifier(options);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier);
   }
 
   @Test
@@ -109,7 +109,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier = provider.extractIdentifier(options);
-    assertNull(identifier);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier);
 
     options =
         new CaseInsensitiveStringMap(
@@ -120,7 +120,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     identifier = provider.extractIdentifier(options);
-    assertNull(identifier);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier);
 
     options =
         new CaseInsensitiveStringMap(
@@ -150,7 +150,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier1 = provider.extractIdentifier(options1);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier1);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier1);
 
     // Test with all uppercase
     CaseInsensitiveStringMap options2 =
@@ -164,7 +164,7 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier2 = provider.extractIdentifier(options2);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier2);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier2);
 
     // Test with mixed case
     CaseInsensitiveStringMap options3 =
@@ -178,6 +178,6 @@ public class SparkSpannerTableProviderBaseTest {
               }
             });
     Identifier identifier3 = provider.extractIdentifier(options3);
-    assertEquals(Identifier.of(new String[] {"p", "i", "d"}, "t"), identifier3);
+    assertEquals(Identifier.of(new String[] {}, "t"), identifier3);
   }
 }

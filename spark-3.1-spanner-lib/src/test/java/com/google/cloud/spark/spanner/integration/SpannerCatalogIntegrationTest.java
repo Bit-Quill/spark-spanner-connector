@@ -15,13 +15,14 @@
 package com.google.cloud.spark.spanner.integration;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.cloud.spark.spanner.SpannerCatalog;
 import com.google.cloud.spark.spanner.SpannerTable;
-import com.google.common.collect.ImmutableMap;
+import com.google.cloud.spark.spanner.graph.SpannerGraph;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -62,24 +63,14 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
   @Before
   public void setupCatalog() {
     catalog = new SpannerCatalog();
-    catalog.initialize("spanner", new CaseInsensitiveStringMap(ImmutableMap.of()));
-  }
-
-  private String projectId() {
-    return connectionProperties(usePostgresSql).get("projectId");
-  }
-
-  private String instanceId() {
-    return connectionProperties(usePostgresSql).get("instanceId");
-  }
-
-  private String databaseId() {
-    return connectionProperties(usePostgresSql).get("databaseId");
+    Map<String, String> options = new HashMap<>(connectionProperties(usePostgresSql));
+    options.remove("table");
+    catalog.initialize("spanner", new CaseInsensitiveStringMap(options));
   }
 
   @Test
   public void testListTables() {
-    String[] namespace = new String[] {projectId(), instanceId(), databaseId()};
+    String[] namespace = new String[] {};
     Identifier[] tables = catalog.listTables(namespace);
     List<String> tableNames =
         Arrays.stream(tables)
@@ -89,12 +80,21 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
 
     assertThat(tableNames)
         .containsAtLeast("schema_test_table", "write_array_test_table", "write_test_table");
+
+    Identifier musicGraphNode = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    Identifier musicGraphEdge = Identifier.of(new String[] {"graph", "MusicGraph"}, "edge");
+    if (usePostgresSql) {
+      assertThat(Arrays.asList(tables)).doesNotContain(musicGraphNode);
+      assertThat(Arrays.asList(tables)).doesNotContain(musicGraphEdge);
+    } else {
+      assertThat(Arrays.asList(tables)).contains(musicGraphNode);
+      assertThat(Arrays.asList(tables)).contains(musicGraphEdge);
+    }
   }
 
   @Test
   public void testLoadTable() throws NoSuchTableException {
-    Identifier ident =
-        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, "schema_test_table");
+    Identifier ident = Identifier.of(new String[] {}, "schema_test_table");
     Table table = catalog.loadTable(ident);
     assertTrue(table instanceof SpannerTable);
     assertThat(table.name()).isEqualTo("schema_test_table");
@@ -108,15 +108,31 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
 
   @Test
   public void testLoadTableNotExists() {
-    Identifier ident =
-        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, "NonExistentTable");
+    Identifier ident = Identifier.of(new String[] {}, "NonExistentTable");
     assertThrows(NoSuchTableException.class, () -> catalog.loadTable(ident));
   }
 
   @Test
+  public void testLoadGraph() throws NoSuchTableException {
+    if (usePostgresSql) {
+      // Graphs are not supported bby PostgresSql dialect.
+      return;
+    }
+
+    Identifier nodeIdent = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    Table nodeTable = catalog.loadTable(nodeIdent);
+    assertTrue(nodeTable instanceof SpannerGraph);
+    assertThat(nodeTable.schema().fieldNames()).asList().containsExactly("id");
+
+    Identifier edgeIdent = Identifier.of(new String[] {"graph", "MusicGraph"}, "edge");
+    Table edgeTable = catalog.loadTable(edgeIdent);
+    assertTrue(edgeTable instanceof SpannerGraph);
+    assertThat(edgeTable.schema().fieldNames()).asList().containsExactly("src", "dst");
+  }
+
+  @Test
   public void testCreateTableAlreadyExists() {
-    Identifier ident =
-        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, "write_test_table");
+    Identifier ident = Identifier.of(new String[] {}, "write_test_table");
     assertThrows(
         TableAlreadyExistsException.class,
         () -> catalog.createTable(ident, new StructType(), null, new HashMap<>()));
@@ -124,16 +140,20 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
 
   @Test
   public void testTableExists() {
-    Identifier ident =
-        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, "write_test_table");
+    Identifier ident = Identifier.of(new String[] {}, "write_test_table");
     assertTrue(catalog.tableExists(ident));
+  }
+
+  @Test
+  public void testGraphExists() {
+    Identifier ident = Identifier.of(new String[] {"graph", "MusicGraph"}, "node");
+    assertEquals(!usePostgresSql, catalog.tableExists(ident));
   }
 
   @Test
   public void testCreateTable() throws NoSuchTableException, TableAlreadyExistsException {
     String tableName = "new_test_table";
-    Identifier ident =
-        Identifier.of(new String[] {projectId(), instanceId(), databaseId()}, tableName);
+    Identifier ident = Identifier.of(new String[] {}, tableName);
     StructType createSchema =
         new StructType()
             .add("id", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA)

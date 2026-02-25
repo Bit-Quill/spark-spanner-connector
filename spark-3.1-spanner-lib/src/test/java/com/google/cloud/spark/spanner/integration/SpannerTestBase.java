@@ -263,7 +263,7 @@ class SpannerTestBase {
     return props;
   }
 
-  protected static Map<String, String> connectionProperties() {
+  protected Map<String, String> connectionProperties() {
     return connectionProperties(false);
   }
 

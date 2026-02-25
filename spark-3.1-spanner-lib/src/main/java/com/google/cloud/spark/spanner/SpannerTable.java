@@ -107,7 +107,6 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
     try (Connection conn =
         SpannerUtils.connectionFromProperties(projectId, instanceId, databaseId, null)) {
       boolean isPostgreSql = checkIsPostgreSql(conn);
-
       this.tableName = isPostgreSql ? tableNameOption.toLowerCase() : tableNameOption;
       this.projectId = projectId;
       this.instanceId = instanceId;
