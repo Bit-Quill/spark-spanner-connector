@@ -113,12 +113,7 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
       this.databaseId = databaseId;
 
       Map<String, String> combinedProps = new HashMap<>(properties.asCaseSensitiveMap());
-      combinedProps.putAll(properties);
       combinedProps.putAll(getOpenLineageDatasetProperties());
-      combinedProps.put("databaseId", databaseId);
-      combinedProps.put("projectId", projectId);
-      combinedProps.put("instanceId", instanceId);
-      combinedProps.put("table", tableName);
       this.properties = new CaseInsensitiveStringMap(combinedProps);
 
       // Still get the DB schema for validation.

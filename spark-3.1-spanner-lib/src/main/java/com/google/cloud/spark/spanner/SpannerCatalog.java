@@ -387,10 +387,6 @@ public class SpannerCatalog implements TableCatalog {
   private CaseInsensitiveStringMap withCatalogConnectionOptions(
       Map<String, String> additionalOptions) {
     Map<String, String> combined = new HashMap<>(options.asCaseSensitiveMap());
-    combined.putAll(options);
-    combined.put("projectId", projectId);
-    combined.put("instanceId", instanceId);
-    combined.put("databaseId", databaseId);
     combined.putAll(additionalOptions);
     return new CaseInsensitiveStringMap(combined);
   }
