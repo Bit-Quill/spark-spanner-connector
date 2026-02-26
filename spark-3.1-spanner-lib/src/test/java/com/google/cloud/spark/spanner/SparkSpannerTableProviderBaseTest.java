@@ -180,4 +180,101 @@ public class SparkSpannerTableProviderBaseTest {
     Identifier identifier3 = provider.extractIdentifier(options3);
     assertEquals(Identifier.of(new String[] {}, "t"), identifier3);
   }
+
+  @Test
+  public void testExtractIdentifierWithGraphNodeType() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("graph", "g");
+                put("type", "node");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertEquals(Identifier.of(new String[] {"graph", "g"}, "node"), identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithGraphEdgeType() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("graph", "g");
+                put("type", "edge");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertEquals(Identifier.of(new String[] {"graph", "g"}, "edge"), identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithGraphNoType() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("graph", "g");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithGraphInvalidType() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("projectId", "p");
+                put("instanceId", "i");
+                put("databaseId", "d");
+                put("graph", "g");
+                put("type", "invalid");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertNull(identifier);
+  }
+
+  @Test
+  public void testExtractIdentifierWithGraphCaseInsensitive() {
+    TestSparkSpannerTableProvider provider = new TestSparkSpannerTableProvider();
+    CaseInsensitiveStringMap options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("GRAPH", "g");
+                put("TYPE", "NODE");
+              }
+            });
+    Identifier identifier = provider.extractIdentifier(options);
+    assertEquals(Identifier.of(new String[] {"graph", "g"}, "node"), identifier);
+
+    options =
+        new CaseInsensitiveStringMap(
+            new HashMap<String, String>() {
+              {
+                put("Graph", "g2");
+                put("Type", "Edge");
+              }
+            });
+    identifier = provider.extractIdentifier(options);
+    assertEquals(Identifier.of(new String[] {"graph", "g2"}, "edge"), identifier);
+  }
 }

@@ -92,11 +92,24 @@ public abstract class SparkSpannerTableProviderBase
   @Override
   public Identifier extractIdentifier(CaseInsensitiveStringMap options) {
     String table = options.get("table");
-    if (table == null) {
-      return null;
+    if (table != null) {
+      return Identifier.of(new String[0], table);
     }
 
-    return Identifier.of(new String[0], table);
+    String graph = options.get("graph");
+    if (graph != null) {
+      String type = options.get("type");
+      if (type != null) {
+        if (type.equalsIgnoreCase("edge")) {
+          return Identifier.of(new String[] {"graph", graph}, "edge");
+        }
+        if (type.equalsIgnoreCase("node")) {
+          return Identifier.of(new String[] {"graph", graph}, "node");
+        }
+      }
+    }
+
+    return null;
   }
 
   @Override
