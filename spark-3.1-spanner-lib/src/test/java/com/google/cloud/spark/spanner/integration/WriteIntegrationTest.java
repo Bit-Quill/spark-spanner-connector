@@ -246,8 +246,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     // 2. Prepare the INSERT: Create row 301 from scratch using the full schema
     // We pad the omitted columns with nulls to match the DSv2 table requirements.
     List<Row> insertRows =
-        Arrays.asList(
-            RowFactory.create(301L, "new thirty-one", null, null, null, null, null, null));
+            Collections.singletonList(
+                    RowFactory.create(301L, "new thirty-one", null, null, null, null, null, null));
     Dataset<Row> insertedRow301 = spark.createDataFrame(insertRows, fullSchema);
 
     // 3. Combine them into your final updatesDs
@@ -636,6 +636,49 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
   private BigDecimal[] rowToDecimalArray(Row row, int index) {
     final List<BigDecimal> actualList = row.getList(index);
     return actualList.toArray(new BigDecimal[0]);
+  }
+
+  @Test
+  public void testIgnoreSaveMode() {
+    String tableName = TestData.WRITE_TABLE_NAME + "_IGNORE";
+    spark.sql("DROP TABLE IF EXISTS spanner." + tableName);
+
+    // 1. Define schema and initial data
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+            });
+
+    List<Row> initialRows = Collections.singletonList(RowFactory.create(501L, "initial-data"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, schema);
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+
+    // 2. Write the initial data. This should create the table.
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+    // 3. Verify the initial write.
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, dfAfterInitialWrite.count());
+    assertEquals("initial-data", dfAfterInitialWrite.first().getString(1));
+
+    // 4. Prepare new data.
+    List<Row> newRows = Collections.singletonList(RowFactory.create(502L, "ignored-data"));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, schema);
+
+    // 5. Attempt to write with Ignore mode. This should be a no-op since the table exists.
+    newDf.write().format("cloud-spanner").options(props).mode(SaveMode.Ignore).save();
+
+    // 6. Verify that the table content is unchanged.
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, finalDf.count());
+    Row finalRow = finalDf.first();
+    assertEquals(501L, finalRow.getLong(0));
+    assertEquals("initial-data", finalRow.getString(1));
   }
 
   @Test
