@@ -7,12 +7,6 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 public class GraphReadIntegrationTestBase extends SparkSpannerIntegrationTestBase {
-
-  @Override
-  protected String getDataFrameFormat() {
-    return "cloud-spanner-graph";
-  }
-
   public DataFrameReader flexibleGraphReader(SpannerGraphConfigs configs) {
     DataFrameReader reader =
         reader().option("enableDataBoost", "true").option("graph", "FlexibleGraph");
