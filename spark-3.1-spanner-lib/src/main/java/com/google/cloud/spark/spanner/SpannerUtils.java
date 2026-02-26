@@ -166,11 +166,12 @@ public class SpannerUtils {
   }
 
   public static Connection connectionFromProperties(Map<String, String> properties) {
+    CaseInsensitiveStringMap caseInsensitiveOptions = new CaseInsensitiveStringMap(properties);
     return connectionFromProperties(
-        properties.get("projectId"),
-        properties.get("instanceId"),
-        properties.get("databaseId"),
-        properties.get("emulatorHost"));
+        caseInsensitiveOptions.get("projectId"),
+        caseInsensitiveOptions.get("instanceId"),
+        caseInsensitiveOptions.get("databaseId"),
+        caseInsensitiveOptions.get("emulatorHost"));
   }
 
   public static Connection connectionFromProperties(

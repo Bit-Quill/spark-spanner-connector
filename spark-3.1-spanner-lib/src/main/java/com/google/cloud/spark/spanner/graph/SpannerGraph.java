@@ -8,6 +8,7 @@ import com.google.cloud.spark.spanner.SpannerErrorCode;
 import com.google.cloud.spark.spanner.graph.query.SpannerGraphQuery;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -59,14 +60,22 @@ public class SpannerGraph implements Table, SupportsRead, SupportsWrite {
   }
 
   static void checkOptions(Map<String, String> options) {
+    CaseInsensitiveStringMap caseInsensitiveOptions = new CaseInsensitiveStringMap(options);
     for (String o : requiredOptions) {
-      Objects.requireNonNull(options.get(o), "missing " + o + " in the options");
+      Objects.requireNonNull(caseInsensitiveOptions.get(o), "missing " + o + " in the options");
     }
   }
 
   @Override
   public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
-    return new SpannerGraphScanBuilder(this);
+    Map<String, String> effectiveOptions = new HashMap<>(this.options.asCaseSensitiveMap());
+    effectiveOptions.putAll(options.asCaseSensitiveMap());
+
+    // Keep identifier-resolved graph identity stable for catalog table reads.
+    effectiveOptions.put("graph", graphName);
+    effectiveOptions.put("type", nodeDataframe ? "node" : "edge");
+
+    return new SpannerGraphScanBuilder(SpannerGraphBuilder.build(effectiveOptions));
   }
 
   @Override

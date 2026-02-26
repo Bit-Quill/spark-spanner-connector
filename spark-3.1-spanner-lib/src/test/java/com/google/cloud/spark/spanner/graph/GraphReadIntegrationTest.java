@@ -3,6 +3,7 @@ package com.google.cloud.spark.spanner.graph;
 import com.google.cloud.spark.spanner.graph.SpannerGraphConfigs.LabelConfig;
 import com.google.common.collect.ImmutableList;
 import java.util.Collections;
+import java.util.List;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.junit.Assert;
@@ -33,6 +34,38 @@ public abstract class GraphReadIntegrationTest extends GraphReadIntegrationTestB
         "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH -[e:KNOWS]-> RETURN e.SingerId AS src, e.FriendId AS dst)";
     Dataset<Row> nodesDf = readNodes(musicGraphReader(null).option("graphQuery", nodeQuery));
     Dataset<Row> edgesDf = readEdges(musicGraphReader(null).option("graphQuery", edgeQuery));
+    Assert.assertArrayEquals(new String[] {"id"}, nodesDf.columns());
+    Assert.assertArrayEquals(new String[] {"src", "dst"}, edgesDf.columns());
+
+    List<Row> ids = nodesDf.orderBy("id").collectAsList();
+    String nodesString = ids.toString();
+    Assert.assertEquals("[[1], [2], [3], [4], [5]]", nodesString);
+
+    String edgesString = edgesDf.orderBy("src", "dst").collectAsList().toString();
+    Assert.assertEquals(
+        "[[1,2], [1,3], [2,1], [2,4], [2,5], [3,1], [3,5], [4,2], [4,5], [5,2], [5,3], [5,4]]",
+        edgesString);
+  }
+
+  @Test
+  public void testMusicGraphDirectQueriesWithCatalogTableApi() {
+    String nodeQuery = "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH (n:SINGER) RETURN n.id AS id)";
+    String edgeQuery =
+        "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH -[e:KNOWS]-> RETURN e.SingerId AS src, e.FriendId AS dst)";
+
+    Dataset<Row> nodesDf =
+        spark
+            .read()
+            .option("enableDataBoost", "true")
+            .option("graphQuery", nodeQuery)
+            .table("spanner.graph.`MusicGraph`.node");
+    Dataset<Row> edgesDf =
+        spark
+            .read()
+            .option("enableDataBoost", "true")
+            .option("graphQuery", edgeQuery)
+            .table("spanner.graph.`MusicGraph`.edge");
+
     Assert.assertArrayEquals(new String[] {"id"}, nodesDf.columns());
     Assert.assertArrayEquals(new String[] {"src", "dst"}, edgesDf.columns());
 

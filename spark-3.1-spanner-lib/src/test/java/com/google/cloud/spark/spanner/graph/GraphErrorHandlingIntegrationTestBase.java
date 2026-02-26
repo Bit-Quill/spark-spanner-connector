@@ -22,12 +22,46 @@ public abstract class GraphErrorHandlingIntegrationTestBase extends GraphReadInt
   }
 
   @Test
+  public void testDirectQueryNonRootPartitionableWithCatalogTableApi() {
+    String nodeQuery =
+        "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH (n:SINGER|ALBUM) RETURN n.id AS id)";
+    Exception e =
+        Assert.assertThrows(
+            Exception.class,
+            () ->
+                spark
+                    .read()
+                    .option("enableDataBoost", "true")
+                    .option("graphQuery", nodeQuery)
+                    .table("spanner.graph.`MusicGraph`.node")
+                    .collect());
+    Assert.assertTrue(e.getMessage().contains("root-partitionable"));
+  }
+
+  @Test
   public void testDirectQueryNoId() {
     String nodeQuery =
         "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH (n:SINGER) RETURN n.id AS no_id)";
     DataFrameReader reader =
         musicGraphReader(null).option("graphQuery", nodeQuery).option("type", "node");
     Exception e = Assert.assertThrows(IllegalArgumentException.class, reader::load);
+    Assert.assertTrue(e.getMessage().contains("id missing"));
+  }
+
+  @Test
+  public void testDirectQueryNoIdWithCatalogTableApi() {
+    String nodeQuery =
+        "SELECT * FROM GRAPH_TABLE (MusicGraph MATCH (n:SINGER) RETURN n.id AS no_id)";
+    Exception e =
+        Assert.assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                spark
+                    .read()
+                    .option("enableDataBoost", "true")
+                    .option("graphQuery", nodeQuery)
+                    .table("spanner.graph.`MusicGraph`.node")
+                    .collect());
     Assert.assertTrue(e.getMessage().contains("id missing"));
   }
 
@@ -62,7 +96,8 @@ public abstract class GraphErrorHandlingIntegrationTestBase extends GraphReadInt
     Exception e =
         Assert.assertThrows(
             IllegalArgumentException.class,
-            () -> musicGraphReader(configs).option("type", node ? "node" : "edge").load());
+            () ->
+                musicGraphReader(configs).option("type", node ? "node" : "edge").load().collect());
     Assert.assertTrue(e.getMessage().contains("property"));
   }
 
