@@ -91,16 +91,11 @@ public abstract class SparkSpannerTableProviderBase
 
   @Override
   public Identifier extractIdentifier(CaseInsensitiveStringMap options) {
-    String projectId = options.get("projectId");
-    String instanceId = options.get("instanceId");
-    String databaseId = options.get("databaseId");
     String table = options.get("table");
-
-    if (projectId == null || instanceId == null || databaseId == null || table == null) {
-      return null;
+    if (table != null) {
+      return Identifier.of(new String[0], table);
     }
-
-    return Identifier.of(new String[] {projectId, instanceId, databaseId}, table);
+    return null;
   }
 
   @Override

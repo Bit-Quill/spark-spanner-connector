@@ -63,6 +63,11 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     this.usePostgresSql = usePostgresSql;
   }
 
+  @Override
+  protected boolean getUsePostgreSql() {
+    return usePostgresSql;
+  }
+
   @Test
   public void testWriteWithNulls() {
     StructType schema =
@@ -241,8 +246,8 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
     // 2. Prepare the INSERT: Create row 301 from scratch using the full schema
     // We pad the omitted columns with nulls to match the DSv2 table requirements.
     List<Row> insertRows =
-            Collections.singletonList(
-                    RowFactory.create(301L, "new thirty-one", null, null, null, null, null, null));
+        Collections.singletonList(
+            RowFactory.create(301L, "new thirty-one", null, null, null, null, null, null));
     Dataset<Row> insertedRow301 = spark.createDataFrame(insertRows, fullSchema);
 
     // 3. Combine them into your final updatesDs
