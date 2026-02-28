@@ -27,7 +27,7 @@ public class SpannerSpark {
 
 
         Dataset<Row> df = spark.read()
-            .format("cloud-spanner")
+            .format(getDataFrameFormat())
             .option("table", "people")
             .option("projectId", System.getenv("SPANNER_SPARK_PROJECT"))
             .option("instanceId", System.getenv("SPANNER_SPARK_INSTANCE"))

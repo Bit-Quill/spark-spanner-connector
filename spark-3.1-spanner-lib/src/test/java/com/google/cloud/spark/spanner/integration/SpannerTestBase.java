@@ -245,37 +245,20 @@ class SpannerTestBase {
   }
 
   protected static Map<String, String> connectionPropertiesLowerCase(boolean usePostgreSql) {
-    Map<String, String> props = new HashMap<>();
-    if (usePostgreSql) {
-      props.put("databaseid", databaseIdPg);
-      props.put("table", tablePg);
-    } else {
-      props.put("databaseid", databaseId);
-      props.put("table", table);
+    Map<String, String> props = connectionProperties(usePostgreSql);
+    Map<String, String> lowerCasedProps = new HashMap<>();
+    for (Map.Entry<String, String> entry : props.entrySet()) {
+      lowerCasedProps.put(entry.getKey().toLowerCase(), entry.getValue());
     }
-    props.put("instanceid", instanceId);
-    props.put("projectid", projectId);
-    if (emulatorHost != null) {
-      props.put("emulatorhost", emulatorHost);
-    }
-    props.put("enablepartialrowupdates", "true");
-
-    return props;
+    return lowerCasedProps;
   }
 
-  protected static Map<String, String> connectionProperties() {
-    return connectionProperties(false);
+  protected Map<String, String> connectionProperties() {
+    return connectionProperties(getUsePostgreSql());
   }
 
-  protected static SpannerTable getSpannerTable(boolean usePostgreSql) {
-    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
-    return new SpannerTable(connectionProperties);
-  }
-
-  protected static SpannerTable getSpannerTable(String tableName, boolean usePostgreSql) {
-    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
-    connectionProperties.put("table", tableName);
-    return new SpannerTable(connectionProperties);
+  protected boolean getUsePostgreSql() {
+    return false;
   }
 
   static InternalRow makeInternalRow(int A, String B, double C) {

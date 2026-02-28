@@ -88,7 +88,7 @@ public abstract class SparkSpannerTableProviderIntegrationTestBase<
     // Arrange
     T provider = getInstance();
     Map<String, String> props = connectionPropertiesLowerCase(false);
-
+    props.put("enablePartialRowUpdates", "true");
     final StructType partialSchema = new StructType().add("long_col", DataTypes.LongType, false);
 
     // Act

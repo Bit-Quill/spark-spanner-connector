@@ -53,6 +53,11 @@ public class SchemaValidationIntegrationTestBase extends SparkSpannerIntegration
     this.usePostgreSql = usePostgreSql;
   }
 
+  @Override
+  protected boolean getUsePostgreSql() {
+    return usePostgreSql;
+  }
+
   @Test
   public void testColumnNotFound() {
     StructType dfSchema =

@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
@@ -42,6 +43,17 @@ import org.junit.runners.JUnit4;
 
 @RunWith(JUnit4.class)
 public abstract class SpannerScanBuilderIntegrationTestBase extends SpannerTestBase {
+
+  private static SpannerTable getSpannerTable(boolean usePostgreSql) {
+    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
+    return new SpannerTable(connectionProperties);
+  }
+
+  protected static SpannerTable getSpannerTable(String tableName, boolean usePostgreSql) {
+    Map<String, String> connectionProperties = connectionProperties(usePostgreSql);
+    connectionProperties.put("table", tableName);
+    return new SpannerTable(connectionProperties);
+  }
 
   @Test
   public void readSchemaShouldWorkInSpannerScanBuilder() throws Exception {

@@ -20,13 +20,16 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.ReadContext;
+import com.google.cloud.spanner.ReadOnlyTransaction;
 import com.google.cloud.spanner.Spanner;
 import java.util.Arrays;
 import java.util.Collection;
@@ -107,8 +110,9 @@ public class SpannerCatalogTest {
 
     when(spanner.getDatabaseClient(any(DatabaseId.class))).thenReturn(dbClient);
     when(dbClient.getDialect()).thenReturn(dialect);
-    ReadContext mockReadContext = mock(ReadContext.class);
-    when(dbClient.singleUse()).thenReturn(mockReadContext);
+    ReadOnlyTransaction mockRoTransaction = mock(ReadOnlyTransaction.class);
+    when(dbClient.readOnlyTransaction()).thenReturn(mockRoTransaction);
+    when(dbClient.singleUse()).thenReturn(mock(ReadContext.class));
   }
 
   @Test
@@ -118,12 +122,13 @@ public class SpannerCatalogTest {
 
   @Test
   public void listTablesShouldReturnTables() {
-    String[] namespace = new String[] {"p", "i", "d"};
+    String[] namespace = new String[0];
     Identifier[] expectedTables = {Identifier.of(namespace, "t1"), Identifier.of(namespace, "t2")};
     when(spannerInfoSchema.listTables(any(ReadContext.class), any(String[].class)))
         .thenReturn(expectedTables);
 
     Identifier[] tables = catalog.listTables(namespace);
+    verify(spannerInfoSchema).listTables(any(ReadContext.class), eq(namespace));
     assertArrayEquals(expectedTables, tables);
   }
 
@@ -136,7 +141,7 @@ public class SpannerCatalogTest {
 
   @Test
   public void loadTableShouldThrowNoSuchTableException() throws NoSuchTableException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "non_existent");
+    Identifier ident = Identifier.of(new String[0], "non_existent");
     when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class)))
         .thenReturn(false);
     thrown.expect(NoSuchTableException.class);
@@ -145,7 +150,7 @@ public class SpannerCatalogTest {
 
   @Test
   public void loadTableShouldReturnSpannerTable() throws NoSuchTableException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "t1");
+    Identifier ident = Identifier.of(new String[0], "t1");
     when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
     Table table = catalog.loadTable(ident);
     assertNotNull(table);
@@ -162,7 +167,7 @@ public class SpannerCatalogTest {
 
   @Test
   public void tableExistsShouldReturnTrue() {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "t1");
+    Identifier ident = Identifier.of(new String[0], "t1");
     when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
     assertTrue(catalog.tableExists(ident));
   }
@@ -184,7 +189,7 @@ public class SpannerCatalogTest {
   @Test
   public void createTableShouldThrowTableAlreadyExistsException()
       throws TableAlreadyExistsException {
-    Identifier ident = Identifier.of(new String[] {"p", "i", "d"}, "existing_table");
+    Identifier ident = Identifier.of(new String[0], "existing_table");
     StructType schema = new StructType();
     when(spannerInfoSchema.tableExists(any(ReadContext.class), any(String.class))).thenReturn(true);
     thrown.expect(TableAlreadyExistsException.class);

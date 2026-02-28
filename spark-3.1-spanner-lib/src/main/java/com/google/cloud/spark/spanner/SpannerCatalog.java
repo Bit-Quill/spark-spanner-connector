@@ -52,6 +52,9 @@ public class SpannerCatalog implements TableCatalog {
   private String catalogName;
   private CaseInsensitiveStringMap options;
   private Spanner spanner;
+  private String projectId;
+  private String instanceId;
+  private String databaseId;
 
   // For testing purposes.
   protected Spanner createSpanner(CaseInsensitiveStringMap options) {
@@ -67,6 +70,9 @@ public class SpannerCatalog implements TableCatalog {
   public void initialize(String name, CaseInsensitiveStringMap options) {
     this.catalogName = name;
     this.options = options;
+    this.projectId = SpannerUtils.getRequiredOption(options, "projectId");
+    this.instanceId = SpannerUtils.getRequiredOption(options, "instanceId");
+    this.databaseId = SpannerUtils.getRequiredOption(options, "databaseId");
     this.spanner = createSpanner(options);
   }
 
@@ -77,21 +83,14 @@ public class SpannerCatalog implements TableCatalog {
 
   @Override
   public Identifier[] listTables(String[] namespace) {
-    if (namespace.length != 3) {
+    if (namespace.length > 0) {
       log.warn("Invalid namespace for listing tables: {}", String.join(".", namespace));
       return new Identifier[0];
     }
-    String projectId = namespace[0];
-    String instanceId = namespace[1];
-    String databaseId = namespace[2];
 
-    Verify.verifyNotNull(projectId, "projectId");
-    Verify.verifyNotNull(instanceId, "instanceId");
-    Verify.verifyNotNull(databaseId, "databaseId");
-    DatabaseClient dbClient =
-        spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
+    DatabaseClient dbClient = getDatabaseClient();
 
-    try (ReadContext readContext = dbClient.singleUse()) {
+    try (ReadContext readContext = dbClient.readOnlyTransaction()) {
       Dialect dialect = dbClient.getDialect();
       return createSchemaInfo(dialect).listTables(readContext, namespace);
     } catch (Exception e) {
@@ -103,7 +102,7 @@ public class SpannerCatalog implements TableCatalog {
 
   @Override
   public Table loadTable(Identifier ident) throws NoSuchTableException {
-    if (ident.namespace().length != 3) {
+    if (ident.namespace().length != 0) {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,
           "Invalid identifier namespace: " + String.join(".", ident.namespace()));
@@ -115,17 +114,10 @@ public class SpannerCatalog implements TableCatalog {
   }
 
   protected Table factorySpannerTable(Identifier ident) {
-    String projectId = ident.namespace()[0];
-    String instanceId = ident.namespace()[1];
-    String databaseId = ident.namespace()[2];
     String table = ident.name();
-
-    Verify.verifyNotNull(projectId, "projectId");
-    Verify.verifyNotNull(instanceId, "instanceId");
-    Verify.verifyNotNull(databaseId, "databaseId");
     Verify.verifyNotNull(table, "table");
 
-    return new SpannerTable(projectId, instanceId, databaseId, table, this.options, null);
+    return new SpannerTable(projectId, instanceId, databaseId, table, options, null);
   }
 
   @Override
@@ -137,12 +129,7 @@ public class SpannerCatalog implements TableCatalog {
       throw new TableAlreadyExistsException(ident);
     }
 
-    String projectId = ident.namespace()[0];
-    String instanceId = ident.namespace()[1];
-    String databaseId = ident.namespace()[2];
-
-    DatabaseClient dbClient =
-        spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
+    DatabaseClient dbClient = getDatabaseClient();
     Dialect dialect = dbClient.getDialect();
     String ddl = toDdl(ident, schema, dialect);
     DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
@@ -256,25 +243,14 @@ public class SpannerCatalog implements TableCatalog {
 
   @Override
   public boolean tableExists(Identifier ident) {
-    if (ident.namespace().length != 3) {
-      return false; // Invalid namespace, so table cannot exist here
-    }
-    String projectId = ident.namespace()[0];
-    String instanceId = ident.namespace()[1];
-    String databaseId = ident.namespace()[2];
     String tableName = ident.name();
 
-    DatabaseClient dbClient =
-        spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
+    DatabaseClient dbClient = getDatabaseClient();
 
     try (ReadContext readContext = dbClient.singleUse()) {
       return createSchemaInfo(dbClient.getDialect()).tableExists(readContext, tableName);
     } catch (Exception e) {
-      log.error(
-          "Error checking table existence {}.{}: {}",
-          String.join(".", ident.namespace()),
-          tableName,
-          e.getMessage());
+      log.error("Error checking table existence {}: {}", tableName, e.getMessage());
       return false;
     }
   }
@@ -289,9 +265,6 @@ public class SpannerCatalog implements TableCatalog {
     if (!tableExists(ident)) {
       return false;
     }
-
-    String instanceId = ident.namespace()[1];
-    String databaseId = ident.namespace()[2];
 
     String ddl = "DROP TABLE " + ident.name();
 
@@ -314,5 +287,9 @@ public class SpannerCatalog implements TableCatalog {
   @Override
   public void renameTable(Identifier oldIdent, Identifier newIdent) {
     throw new UnsupportedOperationException("RENAME TABLE is not supported for SpannerCatalog");
+  }
+
+  private DatabaseClient getDatabaseClient() {
+    return spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
   }
 }

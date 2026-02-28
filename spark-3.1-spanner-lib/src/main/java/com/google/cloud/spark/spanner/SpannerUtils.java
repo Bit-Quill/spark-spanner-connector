@@ -166,11 +166,13 @@ public class SpannerUtils {
   }
 
   public static Connection connectionFromProperties(Map<String, String> properties) {
+    CaseInsensitiveStringMap caseInsensitiveOptions = new CaseInsensitiveStringMap(properties);
+
     return connectionFromProperties(
-        properties.get("projectId"),
-        properties.get("instanceId"),
-        properties.get("databaseId"),
-        properties.get("emulatorHost"));
+        caseInsensitiveOptions.get("projectId"),
+        caseInsensitiveOptions.get("instanceId"),
+        caseInsensitiveOptions.get("databaseId"),
+        caseInsensitiveOptions.get("emulatorHost"));
   }
 
   public static Connection connectionFromProperties(
@@ -530,13 +532,13 @@ public class SpannerUtils {
     return prunedSchema;
   }
 
-  static String getRequiredOption(Map<String, String> properties, String option) {
-    String tableName = properties.get(option);
-    if (tableName == null) {
+  static String getRequiredOption(CaseInsensitiveStringMap properties, String option) {
+    String value = properties.get(option);
+    if (value == null) {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT, "Option '" + option + "' property must be set");
     }
-    return tableName;
+    return value;
   }
 
   public static void validateSchema(
