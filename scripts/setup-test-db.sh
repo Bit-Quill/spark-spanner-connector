@@ -148,7 +148,9 @@ setup_database() {
   fi
 
   # Apply DDL
-  for ddl in $ddl_files_str; do
+  local ddl_files_arr
+  read -r -a ddl_files_arr <<< "$ddl_files_str"
+  for ddl in "${ddl_files_arr[@]}"; do
     echo "Applying DDL from: $ddl"
     gcloud spanner databases ddl update "$db_id" --instance="$SPANNER_INSTANCE_ID" --project="$SPANNER_PROJECT_ID" --ddl-file="$ddl"
   done
