@@ -46,7 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SpannerCatalog implements TableCatalog {
-  public static Metadata PRIMARY_KEY_METADATA =
+  public static final Metadata PRIMARY_KEY_METADATA =
       new MetadataBuilder().putBoolean(SpannerUtils.PRIMARY_KEY_TAG, true).build();
   private static final Logger log = LoggerFactory.getLogger(SpannerCatalog.class);
   private String catalogName;
