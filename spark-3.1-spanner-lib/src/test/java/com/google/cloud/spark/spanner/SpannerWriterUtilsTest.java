@@ -21,6 +21,8 @@ import com.google.cloud.ByteArray;
 import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Mutation;
+import com.google.cloud.spanner.Struct;
+import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -29,6 +31,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.function.BiConsumer;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
@@ -52,10 +55,61 @@ public class SpannerWriterUtilsTest {
       new java.math.BigDecimal("135.791", mc).setScale(9, RoundingMode.HALF_UP);
   private static final scala.math.BigDecimal bd = scala.math.BigDecimal$.MODULE$.apply(jbd);
   private static final Decimal decimal = new Decimal().set(bd);
+  private static final byte[] BYTE_DATA = {95, -10, 127};
+  private static final StructType structType =
+      new StructType()
+          .add("long_field", DataTypes.LongType)
+          .add("str_field", DataTypes.StringType)
+          .add("bool_field", DataTypes.BooleanType)
+          .add("double_field", DataTypes.DoubleType)
+          .add("binary_field", DataTypes.BinaryType)
+          .add("ts_field", DataTypes.TimestampType)
+          .add("dt_field", DataTypes.DateType)
+          .add("decimal_field", new DecimalType(38, 9));
+  private static final Type typeStruct =
+      Type.struct(
+          Type.StructField.of("long_field", Type.int64()),
+          Type.StructField.of("str_field", Type.string()),
+          Type.StructField.of("bool_field", Type.bool()),
+          Type.StructField.of("double_field", Type.float64()),
+          Type.StructField.of("binary_field", Type.bytes()),
+          Type.StructField.of("ts_field", Type.timestamp()),
+          Type.StructField.of("dt_field", Type.date()),
+          Type.StructField.of("decimal_field", Type.numeric()));
+  private static final Struct testStruct =
+      Struct.newBuilder()
+          .set("long_field")
+          .to(100L)
+          .set("str_field")
+          .to("str_value")
+          .set("bool_field")
+          .to(true)
+          .set("double_field")
+          .to(95.5)
+          .set("binary_field")
+          .to(ByteArray.copyFrom(BYTE_DATA))
+          .set("ts_field")
+          .to(Timestamp.ofTimeMicroseconds(1704067200000000L))
+          .set("dt_field")
+          .to(Date.fromYearMonthDay(2024, 1, 1))
+          .set("decimal_field")
+          .to(jbd)
+          .build();
+  private static final Object[] structValues =
+      new Object[] {
+        100L,
+        UTF8String.fromString("str_value"),
+        true,
+        95.5,
+        BYTE_DATA,
+        1704067200000000L,
+        19723,
+        decimal
+      };
+  private static final InternalRow testInternalRow = new GenericInternalRow(structValues);
 
   @RunWith(Parameterized.class)
   public static class ScalarTests {
-    private static final byte[] BYTE_DATA = {95, -10, 127};
 
     // Parameters for each test case: [ColumnName, DataType, MockValue, ExpectedSpannerValue]
     @Parameters(name = "Testing {0}")
@@ -63,7 +117,7 @@ public class SpannerWriterUtilsTest {
       return Arrays.asList(
           new Object[][] {
             {"long", DataTypes.LongType, 100L, Value.int64(100L)},
-            {"string", DataTypes.StringType, "Hello", Value.string("Hello")},
+            {"string", DataTypes.StringType, UTF8String.fromString("Hello"), Value.string("Hello")},
             {"boolean", DataTypes.BooleanType, true, Value.bool(true)},
             {"double", DataTypes.DoubleType, 95.5, Value.float64(95.5)},
             {"binary", DataTypes.BinaryType, BYTE_DATA, Value.bytes(ByteArray.copyFrom(BYTE_DATA))},
@@ -74,7 +128,8 @@ public class SpannerWriterUtilsTest {
               Value.timestamp(Timestamp.ofTimeMicroseconds(1704067200000000L))
             },
             {"dt", DataTypes.DateType, 19723, Value.date(Date.fromYearMonthDay(2024, 1, 1))},
-            {"decimal", new DecimalType(38, 9), decimal, Value.numeric(jbd)}
+            {"decimal", new DecimalType(38, 9), decimal, Value.numeric(jbd)},
+            {"struct", structType, testInternalRow, Value.struct(typeStruct, testStruct)}
           });
     }
 
@@ -102,7 +157,7 @@ public class SpannerWriterUtilsTest {
       // Setup specific getter based on type
       if (sparkType == DataTypes.LongType) when(row.getLong(0)).thenReturn((Long) mockValue);
       else if (sparkType == DataTypes.StringType)
-        when(row.getString(0)).thenReturn((String) mockValue);
+        when(row.getUTF8String(0)).thenReturn((UTF8String) mockValue);
       else if (sparkType == DataTypes.BooleanType)
         when(row.getBoolean(0)).thenReturn((Boolean) mockValue);
       else if (sparkType == DataTypes.DoubleType)
@@ -114,6 +169,9 @@ public class SpannerWriterUtilsTest {
       else if (sparkType == DataTypes.DateType) when(row.getInt(0)).thenReturn((int) mockValue);
       else if (sparkType instanceof DecimalType)
         when(row.getDecimal(0, 38, 9)).thenReturn((Decimal) mockValue);
+      else if (sparkType instanceof StructType)
+        when(row.getStruct(0, ((StructType) sparkType).length()))
+            .thenReturn((InternalRow) mockValue);
 
       // 3. Execute
       com.google.cloud.spanner.Mutation mutation =
@@ -143,6 +201,7 @@ public class SpannerWriterUtilsTest {
             {"timestamp", DataTypes.TimestampType, Value.timestamp(null)},
             {"date", DataTypes.DateType, Value.date(null)},
             {"decimal", new DecimalType(38, 9), Value.numeric(null)},
+            {"struct", new StructType(), Value.struct(Struct.newBuilder().build())}, //            {
             {
               "long_array",
               DataTypes.createArrayType(DataTypes.LongType),
@@ -174,6 +233,11 @@ public class SpannerWriterUtilsTest {
               "decimal_array",
               DataTypes.createArrayType(new DecimalType(38, 9)),
               Value.numericArray(null)
+            },
+            {
+              "struct_array",
+              DataTypes.createArrayType(new StructType()),
+              Value.structArray(Type.struct(), null)
             }
           });
     }
@@ -341,6 +405,23 @@ public class SpannerWriterUtilsTest {
                           ad,
                           (Decimal[]) d,
                           (i, val) -> when(ad.getDecimal(i, 38, 9)).thenReturn((Decimal) val))
+            },
+
+            // 9. Struct Array
+            {
+              "struct_array",
+              structType,
+              new InternalRow[] {testInternalRow}, // Use InternalRow instead of Spanner Struct
+              Value.structArray(typeStruct, Collections.singletonList(testStruct)),
+              (BiConsumer<ArrayData, Object>)
+                  (ad, d) ->
+                      setupArrayMock(
+                          ad,
+                          (InternalRow[]) d, // Cast to InternalRow array
+                          (i, val) -> {
+                            when(ad.getStruct(i, structType.length()))
+                                .thenReturn((InternalRow) val);
+                          })
             }
           });
     }
@@ -368,7 +449,7 @@ public class SpannerWriterUtilsTest {
       when(row.isNullAt(0)).thenReturn(false);
       when(row.getArray(0)).thenReturn(arrayData);
 
-      // Executes the specific stubbing (e.g., ad.toLongArray() or ad.toIntArray())
+      // Executes the specific stubbing (e.g., ad.toLongArray(), ad.toIntArray(), ad.to)
       mockSetup.accept(arrayData, inputData);
 
       Mutation mutation = SpannerWriterUtils.internalRowToMutation(TABLE_NAME, row, schema);
