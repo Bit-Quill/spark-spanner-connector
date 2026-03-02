@@ -27,11 +27,11 @@ public class SpannerSpark {
 
 
         Dataset<Row> df = spark.read()
-            .format(getDataFrameFormat())
+            .format("cloud-spanner")
             .option("table", "people")
-            .option("projectId", System.getenv("SPANNER_SPARK_PROJECT"))
-            .option("instanceId", System.getenv("SPANNER_SPARK_INSTANCE"))
-            .option("database", System.getenv("SPANNER_SPARK_DATABASE"))
+            .option("projectId", System.getenv("GOOGLE_CLOUD_PROJECT"))
+            .option("instanceId", System.getenv("SPANNER_INSTANCE_ID"))
+            .option("databaseId", System.getenv("SPANNER_DATABASE_ID"))
             .load();
         df.show();
         df.printSchema();
