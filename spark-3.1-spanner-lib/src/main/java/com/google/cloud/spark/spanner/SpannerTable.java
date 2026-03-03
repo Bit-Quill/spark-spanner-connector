@@ -51,9 +51,9 @@ public class SpannerTable implements Table, SupportsRead, SupportsWrite {
   private final SpannerTableSchema dbSchema;
   private final StructType sparkSchema;
   private static final ImmutableSet<TableCapability> tableCapabilities =
-      ImmutableSet.of(TableCapability.BATCH_READ, TableCapability.BATCH_WRITE);
+      ImmutableSet.of(
+          TableCapability.BATCH_READ, TableCapability.BATCH_WRITE, TableCapability.TRUNCATE);
   private final Map<String, String> properties;
-
   private static final Logger log = LoggerFactory.getLogger(SpannerTable.class);
 
   public SpannerTable(Map<String, String> properties) {

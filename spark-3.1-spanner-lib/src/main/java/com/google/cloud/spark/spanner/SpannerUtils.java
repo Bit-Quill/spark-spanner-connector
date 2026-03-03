@@ -64,6 +64,7 @@ import org.apache.spark.sql.catalyst.util.GenericArrayData;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.apache.spark.unsafe.types.UTF8String;
 import org.threeten.bp.Duration;
 
@@ -190,6 +191,21 @@ public class SpannerUtils {
 
   public static BatchClientWithCloser batchClientFromProperties(
       Map<String, String> properties, SessionPoolOptions sessionPoolOptions) {
+    SpannerOptions options = buildSpannerOptions(properties, sessionPoolOptions);
+    Spanner spanner = options.getService();
+    DatabaseId databaseId =
+        DatabaseId.of(
+            options.getProjectId(), properties.get("instanceId"), properties.get("databaseId"));
+    return new BatchClientWithCloser(
+        spanner, spanner.getBatchClient(databaseId), spanner.getDatabaseClient(databaseId));
+  }
+
+  public static SpannerOptions buildSpannerOptions(CaseInsensitiveStringMap properties) {
+    return buildSpannerOptions(properties, defaultSessionPoolOptions);
+  }
+
+  public static SpannerOptions buildSpannerOptions(
+      Map<String, String> properties, SessionPoolOptions sessionPoolOptions) {
     SpannerOptions.Builder builder =
         SpannerOptions.newBuilder()
             .setSessionPoolOption(sessionPoolOptions)
@@ -222,13 +238,7 @@ public class SpannerUtils {
     }
     System.setProperty("com.google.cloud.spanner.watchdogTimeoutSeconds", "7200");
 
-    SpannerOptions options = builder.build();
-    Spanner spanner = options.getService();
-    DatabaseId databaseId =
-        DatabaseId.of(
-            options.getProjectId(), properties.get("instanceId"), properties.get("databaseId"));
-    return new BatchClientWithCloser(
-        spanner, spanner.getBatchClient(databaseId), spanner.getDatabaseClient(databaseId));
+    return builder.build();
   }
 
   public static void toSparkDecimal(GenericInternalRow dest, java.math.BigDecimal v, int at) {
