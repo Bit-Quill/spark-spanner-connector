@@ -738,6 +738,49 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
   }
 
   @Test
+  public void testOverwriteSaveMode() {
+    String tableName = TestData.WRITE_TABLE_NAME + "_OVERWRITE";
+    spark.sql("DROP TABLE IF EXISTS spanner." + tableName);
+
+    // 1. Define schema and initial data
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+            });
+
+    List<Row> initialRows = Collections.singletonList(RowFactory.create(601L, "initial-data"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, schema);
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+
+    // 2. Write the initial data. This should create the table.
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+    // 3. Verify the initial write.
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, dfAfterInitialWrite.count());
+    assertEquals("initial-data", dfAfterInitialWrite.first().getString(1));
+
+    // 4. Prepare new data to overwrite.
+    List<Row> newRows = Collections.singletonList(RowFactory.create(602L, "overwritten-data"));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, schema);
+
+    // 5. Attempt to write with Overwrite mode. This should drop and recreate the table.
+    newDf.write().format("cloud-spanner").options(props).mode(SaveMode.Overwrite).save();
+
+    // 6. Verify that the table content is now the new data.
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, finalDf.count());
+    Row finalRow = finalDf.first();
+    assertEquals(602L, finalRow.getLong(0));
+    assertEquals("overwritten-data", finalRow.getString(1));
+  }
+
+  @Test
   public void testErrorIfExists() {
 
     // 1. Write initial data.
