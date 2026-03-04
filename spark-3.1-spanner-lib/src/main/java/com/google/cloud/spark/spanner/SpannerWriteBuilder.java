@@ -56,14 +56,6 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
     return this;
   }
 
-  /**
-   * Deletes all rows from a specified Spanner table using Partitioned DML.
-   * @param dbClient The
-   * initialized Cloud Spanner DatabaseClient.
-   *
-   * @param tableName The name of the table to truncate.
-   * @return The total number of rows deleted.
-   */
   public static long truncateTable(DatabaseClient dbClient, String tableName) {
 
     // 1. Construct the DML Statement
