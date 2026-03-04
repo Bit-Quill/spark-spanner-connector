@@ -57,6 +57,7 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
   }
 
   /**
+   *
    * Deletes all rows from a specified Spanner table using Partitioned DML.
    * * @param dbClient The initialized Cloud Spanner DatabaseClient.
    *
