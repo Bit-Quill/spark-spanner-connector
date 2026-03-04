@@ -62,7 +62,7 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
 
     // 1. Construct the DML Statement
     // Spanner requires a WHERE clause for PDML, even if you are deleting everything.
-    String sql = "DELETE FROM " + tableName + " WHERE true";
+    String sql = "DELETE FROM `" + tableName.replace("`", "``") + "` WHERE true";
     Statement statement = Statement.of(sql);
 
     System.out.println("Starting Partitioned DML execution: " + sql);
