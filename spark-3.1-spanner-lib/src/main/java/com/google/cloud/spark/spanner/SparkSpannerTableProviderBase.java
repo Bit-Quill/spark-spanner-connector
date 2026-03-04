@@ -32,6 +32,8 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 public abstract class SparkSpannerTableProviderBase
     implements SupportsCatalogOptions, DataSourceRegister, TableProvider {
 
+  private static final Gson GSON = new Gson();
+
   static final List<String> GRAPH_OPTION_KEYS =
       Arrays.asList(
           "graph", "type", "enableDataBoost", "configs", "graphQuery", "timestamp", "viewsEnabled");
@@ -124,7 +126,7 @@ public abstract class SparkSpannerTableProviderBase
         }
       }
       return Identifier.of(
-          new String[0], SpannerCatalog.GRAPH_IDENTIFIER_PREFIX + new Gson().toJson(graphProps));
+          new String[0], SpannerCatalog.GRAPH_IDENTIFIER_PREFIX + GSON.toJson(graphProps));
     }
     return null;
   }

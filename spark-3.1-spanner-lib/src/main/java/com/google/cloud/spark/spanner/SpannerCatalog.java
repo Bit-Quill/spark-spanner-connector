@@ -51,6 +51,7 @@ import org.slf4j.LoggerFactory;
 
 public class SpannerCatalog implements TableCatalog {
   public static final String GRAPH_IDENTIFIER_PREFIX = "__spanner_graph__";
+  private static final Gson GSON = new Gson();
 
   public static final Metadata PRIMARY_KEY_METADATA =
       new MetadataBuilder().putBoolean(SpannerUtils.PRIMARY_KEY_TAG, true).build();
@@ -136,7 +137,7 @@ public class SpannerCatalog implements TableCatalog {
   protected Table factorySpannerGraph(Identifier ident) {
     String json = ident.name().substring(GRAPH_IDENTIFIER_PREFIX.length());
     Map<String, String> graphProps =
-        new Gson().fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+        GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
     Map<String, String> allOptions = new HashMap<>(options.asCaseSensitiveMap());
     allOptions.putAll(graphProps);
     return SpannerGraphBuilder.build(allOptions);

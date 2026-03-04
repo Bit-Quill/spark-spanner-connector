@@ -32,6 +32,8 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class SparkSpannerTableProviderBaseTest {
 
+  private static final Gson GSON = new Gson();
+
   // A test implementation of the abstract SparkSpannerTableProviderBase
   private static class TestSparkSpannerTableProvider extends SparkSpannerTableProviderBase {}
 
@@ -105,7 +107,7 @@ public class SparkSpannerTableProviderBaseTest {
     assertTrue(identifier.name().startsWith(SpannerCatalog.GRAPH_IDENTIFIER_PREFIX));
     String json = identifier.name().substring(SpannerCatalog.GRAPH_IDENTIFIER_PREFIX.length());
     Map<String, String> decoded =
-        new Gson().fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+        GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
     assertEquals("MyGraph", decoded.get("graph"));
     assertEquals("node", decoded.get("type"));
     assertEquals(0, identifier.namespace().length);
@@ -130,7 +132,7 @@ public class SparkSpannerTableProviderBaseTest {
     Identifier identifier = provider.extractIdentifier(options);
     String json = identifier.name().substring(SpannerCatalog.GRAPH_IDENTIFIER_PREFIX.length());
     Map<String, String> decoded =
-        new Gson().fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+        GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
     assertEquals(7, decoded.size());
     assertEquals("G", decoded.get("graph"));
     assertEquals("true", decoded.get("enableDataBoost"));
@@ -154,7 +156,7 @@ public class SparkSpannerTableProviderBaseTest {
     Identifier identifier = provider.extractIdentifier(options);
     String json = identifier.name().substring(SpannerCatalog.GRAPH_IDENTIFIER_PREFIX.length());
     Map<String, String> decoded =
-        new Gson().fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+        GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
     assertEquals(1, decoded.size());
     assertEquals("G", decoded.get("graph"));
     assertNull(decoded.get("projectId"));
