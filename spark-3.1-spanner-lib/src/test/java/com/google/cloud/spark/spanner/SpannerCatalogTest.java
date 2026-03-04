@@ -216,6 +216,28 @@ public class SpannerCatalogTest {
   }
 
   @Test
+  public void isGraphIdentifierShouldReturnTrue() {
+    Identifier ident =
+        Identifier.of(new String[0], SpannerCatalog.GRAPH_IDENTIFIER_PREFIX + "{\"graph\":\"G\"}");
+    assertTrue(SpannerCatalog.isGraphIdentifier(ident));
+  }
+
+  @Test
+  public void isGraphIdentifierShouldReturnFalse() {
+    Identifier ident = Identifier.of(new String[0], "my_table");
+    assertFalse(SpannerCatalog.isGraphIdentifier(ident));
+  }
+
+  @Test
+  public void loadTableShouldRejectGraphIdentifierWithNamespace() throws NoSuchTableException {
+    Identifier ident =
+        Identifier.of(
+            new String[] {"ns"}, SpannerCatalog.GRAPH_IDENTIFIER_PREFIX + "{\"graph\":\"G\"}");
+    thrown.expect(SpannerConnectorException.class);
+    catalog.loadTable(ident);
+  }
+
+  @Test
   public void alterTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null);
