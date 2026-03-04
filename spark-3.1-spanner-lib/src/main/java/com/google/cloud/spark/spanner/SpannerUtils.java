@@ -23,10 +23,15 @@ import com.google.api.gax.retrying.RetrySettings;
 import com.google.api.gax.rpc.FixedHeaderProvider;
 import com.google.api.gax.rpc.StatusCode.Code;
 import com.google.cloud.ByteArray;
+import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseId;
+import com.google.cloud.spanner.Dialect;
+import com.google.cloud.spanner.Mutation;
+import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.SessionPoolOptions;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
+import com.google.cloud.spanner.Statement;
 import com.google.cloud.spanner.Struct;
 import com.google.cloud.spanner.Type;
 import com.google.cloud.spanner.Value;
@@ -43,12 +48,14 @@ import java.sql.Timestamp;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,9 +65,16 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder;
+import org.apache.spark.sql.catalyst.encoders.RowEncoder;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.catalyst.util.GenericArrayData;
+import org.apache.spark.sql.types.ArrayType;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
@@ -504,12 +518,12 @@ public class SpannerUtils {
   }
 
   static String getRequiredOption(Map<String, String> properties, String option) {
-    String tableName = properties.get(option);
-    if (tableName == null) {
+    String value = properties.get(option);
+    if (value == null) {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT, "Option '" + option + "' property must be set");
     }
-    return tableName;
+    return value;
   }
 
   public static void validateSchema(
@@ -551,5 +565,137 @@ public class SpannerUtils {
 
       // 3. Nullability checks are deferred to Spanner at write time since Spark can't guarantee it.
     }
+  }
+
+  public static boolean tableExists(Connection connection, String tableName) {
+    String query;
+    if (connection.getDialect() == Dialect.POSTGRESQL) {
+      query =
+          "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = @tableName";
+    } else {
+      query =
+          "SELECT 1 FROM information_schema.tables WHERE table_schema = '' AND table_name = @tableName";
+    }
+    try (ResultSet rs =
+        connection.executeQuery(
+            Statement.newBuilder(query).bind("tableName").to(tableName).build())) {
+      return rs.next();
+    }
+  }
+
+  public static void truncateTable(Connection connection, String tableName) {
+    connection.executeUpdate(Statement.of("DELETE FROM " + tableName + " WHERE 1=1"));
+  }
+
+  public static void createTable(
+      Connection connection,
+      String projectId,
+      String instanceId,
+      String databaseId,
+      String tableName,
+      StructType schema,
+      String primaryKey) {
+    String ddl = createTableDdl(tableName, schema, primaryKey, connection.getDialect());
+
+    SpannerOptions options = SpannerOptions.newBuilder().setProjectId(projectId).build();
+    try (Spanner spanner = options.getService()) {
+      DatabaseAdminClient adminClient = spanner.getDatabaseAdminClient();
+      adminClient
+          .updateDatabaseDdl(instanceId, databaseId, Collections.singletonList(ddl), null)
+          .get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.SCHEMA_UPDATE_FAILED, "Failed to execute DDL: " + ddl, e);
+    }
+  }
+
+  private static String createTableDdl(
+      String tableName, StructType schema, String primaryKey, Dialect dialect) {
+    StringBuilder ddl = new StringBuilder("CREATE TABLE " + tableName + " (");
+    boolean isPostgres = dialect == Dialect.POSTGRESQL;
+
+    for (StructField field : schema.fields()) {
+      ddl.append(field.name())
+          .append(" ")
+          .append(sparkTypeToSpannerType(field.dataType(), isPostgres));
+      if (!field.nullable()) {
+        ddl.append(" NOT NULL");
+      }
+      ddl.append(", ");
+    }
+    ddl.append(") PRIMARY KEY (").append(primaryKey).append(")");
+    return ddl.toString();
+  }
+
+  private static String sparkTypeToSpannerType(DataType sparkType, boolean isPostgres) {
+    if (sparkType instanceof ArrayType) {
+      ArrayType arrayType = (ArrayType) sparkType;
+      String spannerType = sparkTypeToSpannerType(arrayType.elementType(), isPostgres);
+      if (isPostgres) {
+        return spannerType + "[]";
+      }
+      return "ARRAY<" + spannerType + ">";
+    }
+    if (sparkType.equals(DataTypes.LongType)) {
+      return isPostgres ? "INT8" : "INT64";
+    }
+    if (sparkType.equals(DataTypes.StringType)) {
+      return isPostgres ? "TEXT" : "STRING(MAX)";
+    }
+    if (sparkType.equals(DataTypes.BooleanType)) {
+      return "BOOL";
+    }
+    if (sparkType.equals(DataTypes.BinaryType)) {
+      return isPostgres ? "BYTEA" : "BYTES(MAX)";
+    }
+    if (sparkType.equals(DataTypes.TimestampType)) {
+      return isPostgres ? "TIMESTAMPTZ" : "TIMESTAMP";
+    }
+    if (sparkType.equals(DataTypes.DateType)) {
+      return "DATE";
+    }
+    if (sparkType.equals(DataTypes.DoubleType)) {
+      return isPostgres ? "FLOAT8" : "FLOAT64";
+    }
+    if (sparkType.sql().startsWith("DECIMAL")) {
+      return "NUMERIC";
+    }
+    throw new SpannerConnectorException(
+        SpannerErrorCode.UNSUPPORTED, "Unsupported Spark data type: " + sparkType.sql());
+  }
+
+  public static void writeData(Map<String, String> properties, Dataset<Row> data) {
+    String tableName = getRequiredOption(properties, "table");
+    StructType schema = data.schema();
+    ExpressionEncoder<Row> encoder = RowEncoder.apply(schema);
+    ExpressionEncoder.Serializer<Row> serializer = encoder.createSerializer();
+
+    data.toJavaRDD()
+        .foreachPartition(
+            iterator -> {
+              try (Connection connection = SpannerUtils.connectionFromProperties(properties)) {
+                List<Mutation> mutations = new ArrayList<>();
+                int mutationsPerTransaction =
+                    Integer.parseInt(
+                        properties.getOrDefault(
+                            "mutationsPerTransaction",
+                            SpannerDataWriter.MUTATIONS_PER_TRANSACTION_DEFAULT_STR));
+
+                while (iterator.hasNext()) {
+                  Row row = iterator.next();
+                  InternalRow internalRow = serializer.apply(row);
+                  mutations.add(
+                      SpannerWriterUtils.internalRowToMutation(tableName, internalRow, schema));
+
+                  if (mutations.size() >= mutationsPerTransaction) {
+                    connection.write(mutations);
+                    mutations.clear();
+                  }
+                }
+                if (!mutations.isEmpty()) {
+                  connection.write(mutations);
+                }
+              }
+            });
   }
 }
