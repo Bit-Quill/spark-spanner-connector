@@ -122,7 +122,7 @@ public class SpannerCatalog implements TableCatalog {
     return factorySpannerTable(ident);
   }
 
-  static boolean isGraphIdentifier(Identifier ident) {
+  public static boolean isGraphIdentifier(Identifier ident) {
     return ident.name().startsWith(GRAPH_IDENTIFIER_PREFIX);
   }
 
