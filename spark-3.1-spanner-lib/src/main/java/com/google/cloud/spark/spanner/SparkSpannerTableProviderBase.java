@@ -54,22 +54,18 @@ public abstract class SparkSpannerTableProviderBase
   public Table getTable(
       StructType schema, Transform[] partitioning, Map<String, String> properties) {
     final CaseInsensitiveStringMap options = new CaseInsensitiveStringMap(properties);
-
-    boolean hasGraph = options.containsKey("graph");
-    if (hasGraph) {
-      return SpannerGraphBuilder.build(options);
-    }
-
     boolean enablePartialRowUpdates =
         Boolean.parseBoolean(options.getOrDefault("enablePartialRowUpdates", "false"));
-
     boolean hasTable = options.containsKey("table");
-    if (hasTable) {
+    boolean hasGraph = options.containsKey("graph");
+    if (hasTable && !hasGraph) {
       if (enablePartialRowUpdates) {
         return new SpannerTable(options, schema);
       } else {
         return new SpannerTable(options);
       }
+    } else if (!hasTable && hasGraph) {
+      return SpannerGraphBuilder.build(options);
     } else {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,
@@ -96,13 +92,12 @@ public abstract class SparkSpannerTableProviderBase
   }
 
   private Table getTable(Map<String, String> properties) {
-    boolean hasGraph = properties.containsKey("graph");
-    if (hasGraph) {
-      return SpannerGraphBuilder.build(properties);
-    }
     boolean hasTable = properties.containsKey("table");
-    if (hasTable) {
+    boolean hasGraph = properties.containsKey("graph");
+    if (hasTable && !hasGraph) {
       return new SpannerTable(properties);
+    } else if (!hasTable && hasGraph) {
+      return SpannerGraphBuilder.build(properties);
     } else {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,

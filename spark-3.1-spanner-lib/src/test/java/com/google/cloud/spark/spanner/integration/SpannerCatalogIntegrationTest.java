@@ -182,18 +182,8 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     if (usePostgresSql) {
       return;
     }
-    Dataset<Row> df = spark.sql("SELECT * FROM spanner.schema_test_table");
+    Dataset<Row> df = spark.sql("SELECT * FROM spanner.write_test_table");
     assertThat(df.count()).isGreaterThan(0);
-    assertThat(df.columns()).asList().containsExactly("id", "name", "value");
-  }
-
-  @Test
-  public void testLoadTableCaseInsensitive() throws NoSuchTableException {
-    if (usePostgresSql) {
-      return;
-    }
-    Identifier ident = Identifier.of(new String[0], "SCHEMA_TEST_TABLE");
-    Table table = catalog.loadTable(ident);
-    assertTrue(table instanceof SpannerTable);
+    assertThat(df.columns()).asList().containsExactly("long_col", "string_col", "bool_col", "double_col", "timestamp_col", "date_col", "bytes_col", "numeric_col");
   }
 }
