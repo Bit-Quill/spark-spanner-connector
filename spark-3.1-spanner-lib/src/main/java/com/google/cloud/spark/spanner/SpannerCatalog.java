@@ -156,8 +156,12 @@ public class SpannerCatalog implements TableCatalog, AutoCloseable {
           SpannerErrorCode.INVALID_ARGUMENT, "Graph identifier decoded to null");
     }
     Map<String, String> allOptions = new HashMap<>(options.asCaseSensitiveMap());
-    allOptions.putAll(graphProps);
-    return SpannerGraphBuilder.build(allOptions);
+    for (String key : SparkSpannerTableProviderBase.GRAPH_OPTION_KEYS) {
+      String val = graphProps.get(key);
+      if (val != null) {
+        allOptions.put(key, val);
+      }
+    }    return SpannerGraphBuilder.build(allOptions);
   }
 
   @Override
