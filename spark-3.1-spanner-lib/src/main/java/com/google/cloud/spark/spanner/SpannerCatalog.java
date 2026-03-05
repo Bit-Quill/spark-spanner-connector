@@ -161,7 +161,8 @@ public class SpannerCatalog implements TableCatalog, AutoCloseable {
       if (val != null) {
         allOptions.put(key, val);
       }
-    }    return SpannerGraphBuilder.build(allOptions);
+    }
+    return SpannerGraphBuilder.build(allOptions);
   }
 
   @Override
