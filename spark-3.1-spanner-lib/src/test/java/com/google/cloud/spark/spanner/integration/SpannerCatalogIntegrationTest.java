@@ -40,6 +40,7 @@ import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -67,6 +68,11 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     catalog = new SpannerCatalog();
     catalog.initialize(
         "spanner", new CaseInsensitiveStringMap(connectionProperties(usePostgresSql)));
+  }
+
+  @After
+  public void teardownCatalog() {
+    catalog.close();
   }
 
   @Test
@@ -182,8 +188,8 @@ public class SpannerCatalogIntegrationTest extends SparkSpannerIntegrationTestBa
     if (usePostgresSql) {
       return;
     }
-    Dataset<Row> df = spark.sql("SELECT * FROM spanner.write_test_table");
+    Dataset<Row> df = spark.sql("SELECT * FROM spanner.simpleTable");
     assertThat(df.count()).isGreaterThan(0);
-    assertThat(df.columns()).asList().containsExactly("long_col", "string_col", "bool_col", "double_col", "timestamp_col", "date_col", "bytes_col", "numeric_col");
+    assertThat(df.columns()).asList().containsExactly("A", "B", "C");
   }
 }
