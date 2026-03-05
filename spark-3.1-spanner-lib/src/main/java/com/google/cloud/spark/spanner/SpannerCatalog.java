@@ -50,7 +50,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SpannerCatalog implements TableCatalog {
+public class SpannerCatalog implements TableCatalog, AutoCloseable {
   public static final String GRAPH_IDENTIFIER_PREFIX = "__spanner_graph__";
   private static final Gson GSON = new Gson();
 
@@ -340,5 +340,12 @@ public class SpannerCatalog implements TableCatalog {
 
   private DatabaseClient getDatabaseClient() {
     return spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
+  }
+
+  @Override
+  public void close() {
+    if (spanner != null) {
+      spanner.close();
+    }
   }
 }
