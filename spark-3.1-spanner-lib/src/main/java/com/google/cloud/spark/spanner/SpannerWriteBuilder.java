@@ -24,8 +24,12 @@ import org.apache.spark.sql.connector.write.LogicalWriteInfo;
 import org.apache.spark.sql.connector.write.SupportsTruncate;
 import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
+
+  private static final Logger log = LoggerFactory.getLogger(SpannerWriteBuilder.class);
   private final LogicalWriteInfo info;
   private final CaseInsensitiveStringMap properties;
 
@@ -58,27 +62,24 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
     return this;
   }
 
-  public static long truncateTable(DatabaseClient dbClient, String tableName) {
+  private long truncateTable(DatabaseClient dbClient, String tableName) {
 
     // 1. Construct the DML Statement
     // Spanner requires a WHERE clause for PDML, even if you are deleting everything.
     String sql = "DELETE FROM `" + tableName.replace("`", "``") + "` WHERE true";
     Statement statement = Statement.of(sql);
 
-    System.out.println("Starting Partitioned DML execution: " + sql);
-
     try {
       // 2. Execute the Partitioned Update
       // This is a blocking call. The Spanner client will divide the table into
       // partitions and run concurrent background transactions to delete the data.
       long deletedRowCount = dbClient.executePartitionedUpdate(statement);
-
-      System.out.println("Successfully deleted " + deletedRowCount + " rows.");
+      log.info("Successfully deleted " + deletedRowCount + " rows.");
       return deletedRowCount;
 
     } catch (SpannerException e) {
       // SpannerExceptions wrap underlying gRPC errors (e.g., DEADLINE_EXCEEDED, PERMISSION_DENIED)
-      System.err.println("Failed to execute Partitioned DML on table: " + tableName);
+      log.error("Failed to execute Partitioned DML on table: " + tableName, e);
       throw e;
     }
   }
