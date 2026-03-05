@@ -238,6 +238,14 @@ public class SpannerCatalogTest {
   }
 
   @Test
+  public void loadTableShouldRejectEmptyGraphIdentifier() throws NoSuchTableException {
+    Identifier ident = Identifier.of(new String[0], SpannerCatalog.GRAPH_IDENTIFIER_PREFIX);
+    thrown.expect(SpannerConnectorException.class);
+    thrown.expectMessage("Graph identifier has no encoded properties");
+    catalog.loadTable(ident);
+  }
+
+  @Test
   public void alterTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null);

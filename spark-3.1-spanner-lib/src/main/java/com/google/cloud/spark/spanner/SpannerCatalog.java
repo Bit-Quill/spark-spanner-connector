@@ -136,6 +136,10 @@ public class SpannerCatalog implements TableCatalog {
 
   protected Table factorySpannerGraph(Identifier ident) {
     String json = ident.name().substring(GRAPH_IDENTIFIER_PREFIX.length());
+    if (json.isEmpty()) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.INVALID_ARGUMENT, "Graph identifier has no encoded properties");
+    }
     Map<String, String> graphProps =
         GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
     Map<String, String> allOptions = new HashMap<>(options.asCaseSensitiveMap());

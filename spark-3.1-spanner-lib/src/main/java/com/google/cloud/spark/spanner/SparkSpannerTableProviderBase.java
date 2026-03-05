@@ -15,8 +15,8 @@
 package com.google.cloud.spark.spanner;
 
 import com.google.cloud.spark.spanner.graph.SpannerGraphBuilder;
+import com.google.common.collect.ImmutableList;
 import com.google.gson.Gson;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +35,7 @@ public abstract class SparkSpannerTableProviderBase
   private static final Gson GSON = new Gson();
 
   static final List<String> GRAPH_OPTION_KEYS =
-      Arrays.asList(
+      ImmutableList.of(
           "graph", "type", "enableDataBoost", "configs", "graphQuery", "timestamp", "viewsEnabled");
 
   /*
