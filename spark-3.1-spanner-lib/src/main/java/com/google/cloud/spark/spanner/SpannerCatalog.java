@@ -24,6 +24,7 @@ import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spark.spanner.graph.SpannerGraphBuilder;
 import com.google.common.base.Verify;
 import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import com.google.spanner.admin.database.v1.UpdateDatabaseDdlMetadata;
 import java.util.Arrays;
@@ -140,10 +141,26 @@ public class SpannerCatalog implements TableCatalog {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT, "Graph identifier has no encoded properties");
     }
-    Map<String, String> graphProps =
-        GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+    Map<String, String> graphProps;
+    try {
+      graphProps = GSON.fromJson(json, new TypeToken<Map<String, String>>() {}.getType());
+    } catch (JsonSyntaxException e) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.INVALID_ARGUMENT,
+          "Malformed graph identifier JSON: " + e.getMessage(),
+          e);
+    }
+    if (graphProps == null) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.INVALID_ARGUMENT, "Graph identifier decoded to null");
+    }
     Map<String, String> allOptions = new HashMap<>(options.asCaseSensitiveMap());
-    allOptions.putAll(graphProps);
+    for (String key : SparkSpannerTableProviderBase.GRAPH_OPTION_KEYS) {
+      String val = graphProps.get(key);
+      if (val != null) {
+        allOptions.put(key, val);
+      }
+    }
     return SpannerGraphBuilder.build(allOptions);
   }
 

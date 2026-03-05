@@ -246,6 +246,15 @@ public class SpannerCatalogTest {
   }
 
   @Test
+  public void loadTableShouldRejectMalformedGraphJson() throws NoSuchTableException {
+    Identifier ident =
+        Identifier.of(new String[0], SpannerCatalog.GRAPH_IDENTIFIER_PREFIX + "not-valid-json");
+    thrown.expect(SpannerConnectorException.class);
+    thrown.expectMessage("Malformed graph identifier JSON");
+    catalog.loadTable(ident);
+  }
+
+  @Test
   public void alterTableShouldThrowException() {
     thrown.expect(UnsupportedOperationException.class);
     catalog.alterTable(null, (org.apache.spark.sql.connector.catalog.TableChange[]) null);
