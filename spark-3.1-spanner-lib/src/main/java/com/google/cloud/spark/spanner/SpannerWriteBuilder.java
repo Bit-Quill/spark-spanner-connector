@@ -58,8 +58,14 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
 
     if (overwriteMode.equalsIgnoreCase("recreate")) {
       recreateTable(opts);
-    } else {
+    } else if (overwriteMode.equalsIgnoreCase("truncate")) {
       truncateTable(opts);
+    } else {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.INVALID_ARGUMENT,
+          "Unsupported overwriteMode '"
+              + overwriteMode
+              + "'. Supported modes are 'recreate' and 'truncate'.");
     }
 
     return this;
