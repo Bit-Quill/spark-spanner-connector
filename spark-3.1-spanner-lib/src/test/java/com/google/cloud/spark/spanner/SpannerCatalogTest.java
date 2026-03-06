@@ -207,7 +207,7 @@ public class SpannerCatalogTest {
     thrown.expectMessage(
         "No primary key found for table no_pk_table. Please specify at least one primary key column.");
 
-    SpannerInformationSchema.create(dialect).toDdl(ident, schema);
+    SpannerInformationSchema.create(dialect).createTableDdl(ident, schema);
   }
 
   @Test
@@ -279,7 +279,7 @@ public class SpannerCatalogTest {
               new StructField("price", DataTypes.createDecimalType(10, 2), true, Metadata.empty()),
             });
 
-    String ddl = SpannerInformationSchema.create(dialect).toDdl(ident, schema);
+    String ddl = SpannerInformationSchema.create(dialect).createTableDdl(ident, schema);
 
     if (dialect == Dialect.POSTGRESQL) {
       assertEquals(

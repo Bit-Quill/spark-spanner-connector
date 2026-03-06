@@ -167,7 +167,7 @@ public class SpannerCatalog implements TableCatalog, AutoCloseable {
     DatabaseClient dbClient = getDatabaseClient();
     Dialect dialect = dbClient.getDialect();
     SpannerInformationSchema schemaInfo = createSchemaInfo(dialect);
-    String ddl = schemaInfo.toDdl(ident, schema);
+    String ddl = schemaInfo.createTableDdl(ident, schema);
     DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
     OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
         dbAdminClient.updateDatabaseDdl(
@@ -216,7 +216,7 @@ public class SpannerCatalog implements TableCatalog, AutoCloseable {
   public boolean dropTable(Identifier ident) {
     DatabaseClient dbClient = getDatabaseClient();
     SpannerInformationSchema schemaInfo = createSchemaInfo(dbClient.getDialect());
-    String ddl = "DROP TABLE " + schemaInfo.quoteIdentifier(ident.name());
+    String ddl = schemaInfo.dropTableDdl(ident.name());
 
     DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
     OperationFuture<Void, UpdateDatabaseDdlMetadata> op =
