@@ -77,9 +77,11 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
       }
       // TODO Re-use drop table and create table code from SpannerCatalog
       // Drop the table.
+      // Drop the table.
+      String quote = dialect == Dialect.POSTGRESQL ? "\"" : "`";
       dbAdminClient
           .updateDatabaseDdl(
-              instanceId, databaseId, Arrays.asList("DROP TABLE `" + tableName + "`"), null)
+              instanceId, databaseId, Arrays.asList("DROP TABLE " + quote + tableName + quote), null)
           .get();
 
       // Create the table.
