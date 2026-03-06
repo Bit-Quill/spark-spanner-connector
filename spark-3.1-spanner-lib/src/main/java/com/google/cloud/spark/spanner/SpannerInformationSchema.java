@@ -37,7 +37,7 @@ public interface SpannerInformationSchema {
 
   String sparkTypeToSpannerType(StructField field);
 
-  default String toDdl(Identifier ident, StructType schema) {
+  default String createTableDdl(Identifier ident, StructType schema) {
     StringBuilder ddl = new StringBuilder();
     ddl.append("CREATE TABLE ").append(quoteIdentifier(ident.name())).append(" (");
     for (StructField field : schema.fields()) {
@@ -68,6 +68,14 @@ public interface SpannerInformationSchema {
     ddl.append("PRIMARY KEY (").append(String.join(", ", primaryKeys)).append(")");
     ddl.append(")");
     return ddl.toString();
+  }
+
+  default Statement truncateTableDml(String tableName) {
+    return Statement.of("DELETE FROM " + quoteIdentifier(tableName) + " WHERE true");
+  }
+
+  default String dropTableDdl(String tableName) {
+    return "DROP TABLE " + quoteIdentifier(tableName);
   }
 
   static SpannerInformationSchema create(Dialect dialect) {

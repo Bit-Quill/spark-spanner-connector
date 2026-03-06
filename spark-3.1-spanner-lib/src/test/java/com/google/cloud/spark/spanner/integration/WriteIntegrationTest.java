@@ -28,11 +28,6 @@ import static org.junit.Assert.fail;
 import com.google.cloud.spanner.ErrorCode;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spark.spanner.SpannerCatalog;
-import com.google.cloud.spanner.DatabaseAdminClient;
-import com.google.cloud.spanner.Dialect;
-import com.google.cloud.spanner.Spanner;
-import com.google.cloud.spark.spanner.SpannerSchemaConverter;
-import com.google.cloud.spark.spanner.SpannerUtils;
 import com.google.cloud.spark.spanner.TestData;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -49,11 +44,9 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.junit.Assert;
-import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -123,7 +116,106 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
 
   @Test
   public void testOverwriteRecreateMode() {
+    String tableName = TestData.WRITE_TABLE_NAME + "_RECREATE";
+    spark.sql("DROP TABLE IF EXISTS spanner." + tableName);
 
+    // 1. Define schema with primary key metadata (needed for table recreation)
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+            });
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+
+    // 2. Write initial data (creates the table via ErrorIfExists)
+    List<Row> initialRows =
+        Arrays.asList(RowFactory.create(1L, "initial-one"), RowFactory.create(2L, "initial-two"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, schema);
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+    // 3. Verify initial data
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(2, dfAfterInitialWrite.count());
+
+    // 4. Overwrite with recreate mode
+    List<Row> newRows =
+        Arrays.asList(
+            RowFactory.create(3L, "new-three"),
+            RowFactory.create(4L, "new-four"),
+            RowFactory.create(5L, "new-five"));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, schema);
+
+    Map<String, String> overwriteProps = connectionProperties(usePostgresSql);
+    overwriteProps.put("table", tableName);
+    overwriteProps.put("overwriteMode", "recreate");
+
+    newDf.write().format("cloud-spanner").options(overwriteProps).mode(SaveMode.Overwrite).save();
+
+    // 5. Verify only new data exists
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(3, finalDf.count());
+
+    Map<Long, Row> finalRows =
+        finalDf.collectAsList().stream()
+            .collect(java.util.stream.Collectors.toMap(r -> r.getLong(0), r -> r));
+
+    assertThat(finalRows.get(3L).getString(1)).isEqualTo("new-three");
+    assertThat(finalRows.get(4L).getString(1)).isEqualTo("new-four");
+    assertThat(finalRows.get(5L).getString(1)).isEqualTo("new-five");
+  }
+
+  @Test
+  public void testOverwriteTruncateMode() {
+    String tableName = TestData.WRITE_TABLE_NAME + "_TRUNCATE";
+    spark.sql("DROP TABLE IF EXISTS spanner." + tableName);
+
+    // 1. Define schema with primary key metadata (needed for initial table creation)
+    StructType schema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, SpannerCatalog.PRIMARY_KEY_METADATA),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+            });
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+
+    // 2. Write initial data (creates the table via ErrorIfExists)
+    List<Row> initialRows =
+        Arrays.asList(RowFactory.create(1L, "initial-one"), RowFactory.create(2L, "initial-two"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, schema);
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).save();
+
+    // 3. Verify initial data
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(2, dfAfterInitialWrite.count());
+
+    // 4. Overwrite with default truncate mode
+    List<Row> newRows =
+        Arrays.asList(
+            RowFactory.create(3L, "new-three"),
+            RowFactory.create(4L, "new-four"),
+            RowFactory.create(5L, "new-five"));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, schema);
+
+    newDf.write().format("cloud-spanner").options(props).mode(SaveMode.Overwrite).save();
+
+    // 5. Verify only new data exists
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(3, finalDf.count());
+
+    Map<Long, Row> finalRows =
+        finalDf.collectAsList().stream()
+            .collect(java.util.stream.Collectors.toMap(r -> r.getLong(0), r -> r));
+
+    assertThat(finalRows.get(3L).getString(1)).isEqualTo("new-three");
+    assertThat(finalRows.get(4L).getString(1)).isEqualTo("new-four");
+    assertThat(finalRows.get(5L).getString(1)).isEqualTo("new-five");
   }
 
   @Override

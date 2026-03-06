@@ -22,8 +22,9 @@ import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.Statement;
 import com.google.cloud.spanner.connection.Connection;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.ExecutionException;
+import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.write.BatchWrite;
 import org.apache.spark.sql.connector.write.LogicalWriteInfo;
 import org.apache.spark.sql.connector.write.SupportsTruncate;
@@ -74,20 +75,18 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
       try (Connection conn = SpannerUtils.connectionFromProperties(opts.asCaseSensitiveMap())) {
         dialect = conn.getDialect();
       }
-      // TODO Re-use drop table and create table code from SpannerCatalog
-      // Drop the table.
-      // Drop the table.
-      String quote = dialect == Dialect.POSTGRESQL ? "\"" : "`";
+      SpannerInformationSchema schemaInfo = SpannerInformationSchema.create(dialect);
+
+      String dropDdl = schemaInfo.dropTableDdl(tableName);
       dbAdminClient
-          .updateDatabaseDdl(
-              instanceId, databaseId, Arrays.asList("DROP TABLE " + quote + tableName + quote), null)
+          .updateDatabaseDdl(instanceId, databaseId, Collections.singletonList(dropDdl), null)
           .get();
 
       // Create the table.
-      SpannerSchemaConverter converter = new SpannerSchemaConverter(dialect);
-      String createTableDdl = converter.sparkSchemaToSpannerDDL(this.schema, tableName);
+      Identifier ident = Identifier.of(new String[0], tableName);
+      String createDdl = schemaInfo.createTableDdl(ident, this.schema);
       dbAdminClient
-          .updateDatabaseDdl(instanceId, databaseId, Arrays.asList(createTableDdl), null)
+          .updateDatabaseDdl(instanceId, databaseId, Collections.singletonList(createDdl), null)
           .get();
 
     } catch (InterruptedException | ExecutionException e) {
@@ -105,30 +104,29 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
     try (Spanner spanner = SpannerUtils.buildSpannerOptions(opts).getService()) {
       DatabaseClient dbClient =
           spanner.getDatabaseClient(DatabaseId.of(projectId, instanceId, databaseId));
-      truncateTable(dbClient, tableName);
+      Dialect dialect = dbClient.getDialect();
+
+      SpannerInformationSchema informationSchema = SpannerInformationSchema.create(dialect);
+
+      truncateTable(dbClient, tableName, informationSchema);
     } catch (Exception e) {
       throw new SpannerConnectorException(
           SpannerErrorCode.DDL_EXCEPTION, "Error truncating table " + tableName, e);
     }
   }
 
-  private long truncateTable(DatabaseClient dbClient, String tableName) {
+  private long truncateTable(
+      DatabaseClient dbClient, String tableName, SpannerInformationSchema informationSchema) {
 
-    // 1. Construct the DML Statement
-    // Spanner requires a WHERE clause for PDML, even if you are deleting everything.
-    String sql = "DELETE FROM `" + tableName.replace("`", "``") + "` WHERE true";
-    Statement statement = Statement.of(sql);
+    Statement statement = informationSchema.truncateTableDml(tableName);
 
     try {
-      // 2. Execute the Partitioned Update
-      // This is a blocking call. The Spanner client will divide the table into
-      // partitions and run concurrent background transactions to delete the data.
+      // Execute partitioned update. This is a blocking call.
       long deletedRowCount = dbClient.executePartitionedUpdate(statement);
       log.info("Successfully deleted " + deletedRowCount + " rows.");
       return deletedRowCount;
 
     } catch (SpannerException e) {
-      // SpannerExceptions wrap underlying gRPC errors (e.g., DEADLINE_EXCEEDED, PERMISSION_DENIED)
       log.error("Failed to execute Partitioned DML on table: " + tableName, e);
       throw e;
     }
