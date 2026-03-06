@@ -14,15 +14,21 @@
 
 package com.google.cloud.spark.spanner;
 
+import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
+import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.connection.Connection;
+import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
 import org.apache.spark.sql.connector.write.BatchWrite;
 import org.apache.spark.sql.connector.write.LogicalWriteInfo;
 import org.apache.spark.sql.connector.write.SupportsTruncate;
 import org.apache.spark.sql.connector.write.WriteBuilder;
+import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +37,11 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
 
   private static final Logger log = LoggerFactory.getLogger(SpannerWriteBuilder.class);
   private final LogicalWriteInfo info;
+  private final StructType schema;
 
   public SpannerWriteBuilder(LogicalWriteInfo info) {
     this.info = info;
+    this.schema = info.schema();
   }
 
   @Override
@@ -44,6 +52,49 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
   @Override
   public WriteBuilder truncate() {
     CaseInsensitiveStringMap opts = new CaseInsensitiveStringMap(this.info.options());
+    String overwriteMode = opts.getOrDefault("overwriteMode", "truncate");
+
+    if (overwriteMode.equalsIgnoreCase("recreate")) {
+      recreateTable(opts);
+    } else {
+      truncateTable(opts);
+    }
+
+    return this;
+  }
+
+  private void recreateTable(CaseInsensitiveStringMap opts) {
+    String instanceId = SpannerUtils.getRequiredOption(opts, "instanceId");
+    String databaseId = SpannerUtils.getRequiredOption(opts, "databaseId");
+    String tableName = SpannerUtils.getRequiredOption(opts, "table");
+
+    try (Spanner spanner = SpannerUtils.buildSpannerOptions(opts).getService()) {
+      DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
+      Dialect dialect;
+      try (Connection conn = SpannerUtils.connectionFromProperties(opts.asCaseSensitiveMap())) {
+        dialect = conn.getDialect();
+      }
+      // TODO Re-use drop table and create table code from SpannerCatalog
+      // Drop the table.
+      dbAdminClient
+          .updateDatabaseDdl(
+              instanceId, databaseId, Arrays.asList("DROP TABLE `" + tableName + "`"), null)
+          .get();
+
+      // Create the table.
+      SpannerSchemaConverter converter = new SpannerSchemaConverter(dialect);
+      String createTableDdl = converter.sparkSchemaToSpannerDDL(this.schema, tableName);
+      dbAdminClient
+          .updateDatabaseDdl(instanceId, databaseId, Arrays.asList(createTableDdl), null)
+          .get();
+
+    } catch (InterruptedException | ExecutionException e) {
+      throw new SpannerConnectorException(
+          SpannerErrorCode.DDL_EXCEPTION, "Error recreating table " + tableName, e);
+    }
+  }
+
+  private void truncateTable(CaseInsensitiveStringMap opts) {
     String projectId = SpannerUtils.getRequiredOption(opts, "projectId");
     String instanceId = SpannerUtils.getRequiredOption(opts, "instanceId");
     String databaseId = SpannerUtils.getRequiredOption(opts, "databaseId");
@@ -57,7 +108,6 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
       throw new SpannerConnectorException(
           SpannerErrorCode.DDL_EXCEPTION, "Error truncating table " + tableName, e);
     }
-    return this;
   }
 
   private long truncateTable(DatabaseClient dbClient, String tableName) {
