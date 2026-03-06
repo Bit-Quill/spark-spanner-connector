@@ -24,6 +24,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.google.cloud.spanner.ErrorCode;
+import com.google.cloud.spanner.SpannerException;
+import com.google.cloud.spark.spanner.SpannerCatalog;
+import com.google.cloud.spanner.DatabaseAdminClient;
+import com.google.cloud.spanner.Dialect;
+import com.google.cloud.spanner.Spanner;
+import com.google.cloud.spark.spanner.SpannerSchemaConverter;
+import com.google.cloud.spark.spanner.SpannerUtils;
 import com.google.cloud.spark.spanner.TestData;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -40,9 +48,11 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.junit.Assert;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -103,6 +113,11 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
   public WriteIntegrationTest(boolean usePostgresSql) {
     super();
     this.usePostgresSql = usePostgresSql;
+  }
+
+  @Test
+  public void testOverwriteRecreateMode() {
+
   }
 
   @Override
