@@ -23,6 +23,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.google.cloud.spanner.DatabaseAdminClient;
+import com.google.cloud.spanner.Dialect;
+import com.google.cloud.spanner.Spanner;
+import com.google.cloud.spark.spanner.SpannerSchemaConverter;
+import com.google.cloud.spark.spanner.SpannerUtils;
 import com.google.cloud.spark.spanner.TestData;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -34,13 +39,16 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -61,6 +69,83 @@ public abstract class WriteIntegrationTest extends SparkSpannerIntegrationTestBa
   public WriteIntegrationTest(boolean usePostgresSql) {
     super();
     this.usePostgresSql = usePostgresSql;
+  }
+
+  @Test
+  public void testOverwriteRecreateMode() throws ExecutionException, InterruptedException {
+    String tableName = TestData.WRITE_TABLE_NAME + "_RECREATE";
+
+    // 1. Define initial schema and data
+    StructType initialSchema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, Metadata.fromJson("{\"pk\": true}")),
+              DataTypes.createStructField("string_col", DataTypes.StringType, true),
+            });
+    List<Row> initialRows = Collections.singletonList(RowFactory.create(1L, "one"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, initialSchema);
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+
+    // 2. Create the table manually.
+    try (Spanner spanner =
+        SpannerUtils.buildSpannerOptions(new CaseInsensitiveStringMap(props)).getService()) {
+      DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
+      Dialect dialect = usePostgresSql ? Dialect.POSTGRESQL : Dialect.GOOGLE_STANDARD_SQL;
+      SpannerSchemaConverter converter = new SpannerSchemaConverter(dialect);
+      String createTableDdl = converter.sparkSchemaToSpannerDDL(initialSchema, tableName);
+      dbAdminClient
+          .updateDatabaseDdl(
+              SpannerUtils.getRequiredOption(props, "instanceId"),
+              SpannerUtils.getRequiredOption(props, "databaseId"),
+              Arrays.asList(createTableDdl),
+              null)
+          .get();
+    }
+
+    // 3. Write initial data.
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.Append).save();
+
+    // 4. Verify initial write.
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, dfAfterInitialWrite.count());
+    assertEquals("one", dfAfterInitialWrite.first().getString(1));
+    assertEquals(2, dfAfterInitialWrite.schema().fields().length);
+
+    // 5. Define new schema and data.
+    StructType newSchema =
+        new StructType(
+            new StructField[] {
+              DataTypes.createStructField(
+                  "long_col", DataTypes.LongType, false, Metadata.fromJson("{\"pk\": true}")),
+              DataTypes.createStructField("another_string_col", DataTypes.StringType, true),
+              DataTypes.createStructField("double_col", DataTypes.DoubleType, true),
+            });
+    List<Row> newRows = Collections.singletonList(RowFactory.create(2L, "two", 2.2));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, newSchema);
+
+    // 6. Overwrite with recreate.
+    props.put("overwriteMode", "recreate");
+    newDf.write().format("cloud-spanner").options(props).mode(SaveMode.Overwrite).save();
+
+    // Refresh the table in Spark's catalog.
+    spark.catalog().refreshTable(tableName);
+
+    // 7. Verify the final state.
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load();
+    assertEquals(1, finalDf.count());
+    // Check schema.
+    assertEquals(3, finalDf.schema().fields().length);
+    assertEquals("long_col", finalDf.schema().fields()[0].name());
+    assertEquals("another_string_col", finalDf.schema().fields()[1].name());
+    assertEquals("double_col", finalDf.schema().fields()[2].name());
+    // Check data.
+    Row finalRow = finalDf.first();
+    assertEquals(2L, finalRow.getLong(0));
+    assertEquals("two", finalRow.getString(1));
+    assertEquals(2.2, finalRow.getDouble(2), 0.0001);
   }
 
   @Test

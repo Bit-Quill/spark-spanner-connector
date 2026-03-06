@@ -513,7 +513,7 @@ public class SpannerUtils {
     return prunedSchema;
   }
 
-  static String getRequiredOption(Map<String, String> properties, String option) {
+  public static String getRequiredOption(Map<String, String> properties, String option) {
     String tableName = properties.get(option);
     if (tableName == null) {
       throw new SpannerConnectorException(
