@@ -29,8 +29,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import com.google.cloud.spark.spanner.TestData;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException;
 import org.apache.spark.sql.connector.catalog.Identifier;
@@ -52,6 +56,11 @@ public class SpannerCatalogIntegrationTest extends SparkCatalogSpannerIntegratio
 
   private SpannerCatalog catalog;
   private final boolean usePostgresSql;
+
+  @Override
+  protected boolean getUsePostgreSql() {
+    return usePostgresSql;
+  }
 
   @Parameters
   public static Collection<Object[]> usePostgresSqlValues() {
@@ -124,7 +133,7 @@ public class SpannerCatalogIntegrationTest extends SparkCatalogSpannerIntegratio
   }
 
   @Test
-  public void testCreateTable() throws NoSuchTableException, TableAlreadyExistsException {
+  public void testCreateTable() throws NoSuchTableException {
     String tableName = "new_test_table";
     Identifier ident = Identifier.of(new String[0], tableName);
     StructType createSchema =
@@ -191,5 +200,73 @@ public class SpannerCatalogIntegrationTest extends SparkCatalogSpannerIntegratio
     Dataset<Row> df = spark.sql("SELECT * FROM spanner.simpleTable");
     assertThat(df.count()).isGreaterThan(0);
     assertThat(df.columns()).asList().containsExactly("A", "B", "C");
+  }
+
+
+  @Test
+  public void testOverwriteRecreateMode() {
+    testOverwriteImpl("recreate");
+  }
+
+  @Test
+  public void testOverwriteTruncateMode() {
+    testOverwriteImpl("truncate");
+  }
+
+  private void testOverwriteImpl(String mode) {
+    final StructType SIMPLE_SCHEMA = new StructType(
+            new StructField[] {
+                    DataTypes.createStructField("long_col",
+                            DataTypes.LongType,
+                            false,
+                            SpannerCatalog.PRIMARY_KEY_METADATA),
+                    DataTypes.createStructField("string_col",
+                            DataTypes.StringType,
+                            true),
+            });
+
+
+    String tableName = TestData.WRITE_TABLE_NAME + "_" + mode;
+    String qualifiedTableName = "spanner." + tableName;
+    spark.sql("DROP TABLE IF EXISTS " + qualifiedTableName);
+
+    // 1. Define schema with primary key metadata (needed for table recreation)
+
+    Map<String, String> props = connectionProperties(usePostgresSql);
+    props.put("table", tableName);
+    props.put("overwriteMode", mode);
+
+    // 2. Write initial data (creates the table via ErrorIfExists)
+    List<Row> initialRows =
+            Arrays.asList(RowFactory.create(1L, "initial-one"), RowFactory.create(2L, "initial-two"));
+    Dataset<Row> initialDf = spark.createDataFrame(initialRows, SIMPLE_SCHEMA);
+    initialDf.write().format("cloud-spanner").options(props).mode(SaveMode.ErrorIfExists).saveAsTable(qualifiedTableName);
+
+    // 3. Verify initial data
+    Dataset<Row> dfAfterInitialWrite = spark.read().format("cloud-spanner").options(props).table(qualifiedTableName);
+    assertEquals(2, dfAfterInitialWrite.count());
+
+    // 4. Overwrite with recreate mode
+    List<Row> newRows =
+            Arrays.asList(
+                    RowFactory.create(3L, "new-three"),
+                    RowFactory.create(4L, "new-four"),
+                    RowFactory.create(5L, "new-five"));
+    Dataset<Row> newDf = spark.createDataFrame(newRows, SIMPLE_SCHEMA);
+
+
+    newDf.write().format("cloud-spanner").options(props).mode(SaveMode.Overwrite).save(qualifiedTableName);
+
+    // 5. Verify only new data exists
+    Dataset<Row> finalDf = spark.read().format("cloud-spanner").options(props).load(qualifiedTableName);
+    assertEquals(3, finalDf.count());
+
+    Map<Long, Row> finalRows =
+            finalDf.collectAsList().stream()
+                    .collect(java.util.stream.Collectors.toMap(r -> r.getLong(0), r -> r));
+
+    assertThat(finalRows.get(3L).getString(1)).isEqualTo("new-three");
+    assertThat(finalRows.get(4L).getString(1)).isEqualTo("new-four");
+    assertThat(finalRows.get(5L).getString(1)).isEqualTo("new-five");
   }
 }
