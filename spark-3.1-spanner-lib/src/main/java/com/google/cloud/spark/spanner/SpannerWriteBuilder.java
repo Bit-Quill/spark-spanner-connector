@@ -21,7 +21,6 @@ import com.google.cloud.spanner.Dialect;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.Statement;
-import com.google.cloud.spanner.connection.Connection;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import org.apache.spark.sql.connector.catalog.Identifier;
@@ -58,9 +57,9 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
     String overwriteMode = opts.getOrDefault("overwriteMode", "truncate");
 
     if (overwriteMode.equalsIgnoreCase("recreate")) {
-      recreateTable(opts);
+      recreateTable(this.properties);
     } else if (overwriteMode.equalsIgnoreCase("truncate")) {
-      truncateTable(opts);
+      truncateTable(this.properties);
     } else {
       throw new SpannerConnectorException(
           SpannerErrorCode.INVALID_ARGUMENT,
