@@ -79,10 +79,7 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
 
     try (Spanner spanner = SpannerUtils.buildSpannerOptions(opts).getService()) {
       DatabaseAdminClient dbAdminClient = spanner.getDatabaseAdminClient();
-      Dialect dialect;
-      try (Connection conn = SpannerUtils.connectionFromProperties(opts.asCaseSensitiveMap())) {
-        dialect = conn.getDialect();
-      }
+      Dialect dialect = dbAdminClient.getDatabase(instanceId, databaseId).getDialect();
       SpannerInformationSchema schemaInfo = SpannerInformationSchema.create(dialect);
 
       String dropDdl = schemaInfo.dropTableDdl(tableName);
