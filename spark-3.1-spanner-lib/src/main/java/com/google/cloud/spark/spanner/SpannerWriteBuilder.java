@@ -72,6 +72,7 @@ public class SpannerWriteBuilder implements WriteBuilder, SupportsTruncate {
   }
 
   private void recreateTable(CaseInsensitiveStringMap opts) {
+    String projectId = SpannerUtils.getRequiredOption(opts, "projectId");
     String instanceId = SpannerUtils.getRequiredOption(opts, "instanceId");
     String databaseId = SpannerUtils.getRequiredOption(opts, "databaseId");
     String tableName = SpannerUtils.getRequiredOption(opts, "table");
