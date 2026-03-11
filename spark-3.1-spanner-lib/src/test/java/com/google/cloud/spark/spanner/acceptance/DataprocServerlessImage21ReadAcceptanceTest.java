@@ -22,13 +22,13 @@ import org.junit.runners.JUnit4;
  * requireOsLogin disabled, otherwise an org policy violation error will be thrown.
  */
 @RunWith(JUnit4.class)
-public final class DataprocServerlessImage11AcceptanceTest
-    extends DataprocServerlessAcceptanceTestBase {
+public final class DataprocServerlessImage21ReadAcceptanceTest
+    extends DataprocServerlessReadAcceptanceTestBase {
 
   private static AcceptanceTestContext context;
   public static final String CONNECTOR_JAR_DIRECTORY = "../spark-3.1-spanner/target";
 
-  public DataprocServerlessImage11AcceptanceTest() {
-    super(CONNECTOR_JAR_DIRECTORY, "spark-3.1-spanner", "1.1");
+  public DataprocServerlessImage21ReadAcceptanceTest() {
+    super(CONNECTOR_JAR_DIRECTORY, "spark-3.1-spanner", "2.1");
   }
 }

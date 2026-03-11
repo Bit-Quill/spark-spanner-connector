@@ -14,9 +14,6 @@
 
 package com.google.cloud.spark.spanner.acceptance;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertTrue;
-
 import com.google.api.gax.longrunning.OperationFuture;
 import com.google.api.gax.longrunning.OperationSnapshot;
 import com.google.cloud.dataproc.v1.*;
@@ -43,14 +40,11 @@ import com.google.cloud.spark.spanner.TestData;
 import com.google.common.base.Preconditions;
 import com.google.spanner.admin.database.v1.CreateDatabaseMetadata;
 import com.google.spanner.admin.instance.v1.CreateInstanceMetadata;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import org.junit.After;
-import org.junit.AfterClass;
 import org.junit.Before;
-import org.junit.Test;
 
 /**
  * The acceptance test on the Dataproc Serverless. The test have to be running on the project with
@@ -68,13 +62,13 @@ public class DataprocServerlessAcceptanceTestBase {
   // the teardown we delete the Cloud Spanner database, hence use
   // system time.Nanos to avoid any cross-pollution between concurrently
   // running tests.
-  private static final String DATABASE_ID =
+  protected static final String DATABASE_ID =
       Preconditions.checkNotNull(
               System.getenv("SPANNER_DATABASE_ID"),
               "Please set the 'SPANNER_DATABASE_ID' environment variable")
           + "-"
           + System.nanoTime();
-  private static final String INSTANCE_ID =
+  protected static final String INSTANCE_ID =
       Preconditions.checkNotNull(
           System.getenv("SPANNER_INSTANCE_ID"),
           "Please set the 'SPANNER_INSTANCE_ID' environment variable");
@@ -92,14 +86,13 @@ public class DataprocServerlessAcceptanceTestBase {
   String testId = String.format("%s-%s", testName, System.currentTimeMillis());
   String testBaseGcsDir = AcceptanceTestUtils.createTestBaseGcsDir(testId);
   String connectorJarUri = testBaseGcsDir + "/connector.jar";
-  static AcceptanceTestContext context;
+  AcceptanceTestContext context =
+      new AcceptanceTestContext(
+          testId, generateClusterName(testId), testBaseGcsDir, connectorJarUri);
 
   private final String s8sImageVersion;
   private final String connectorJarDirectory;
   private final String connectorJarPrefix;
-
-  private static Exception initializationException;
-  private static boolean initialized = false;
 
   public DataprocServerlessAcceptanceTestBase(
       String connectorJarDirectory, String connectorJarPrefix, String s8sImageVersion) {
@@ -110,24 +103,9 @@ public class DataprocServerlessAcceptanceTestBase {
 
   @Before
   public void createBatchControllerClient() throws Exception {
-    if (initializationException != null) {
-      throw initializationException;
-    }
-
-    // Lazy-initialize exactly once
-    if (!initialized) {
-      try {
-        context =
-            new AcceptanceTestContext(
-                testId, generateClusterName(testId), testBaseGcsDir, connectorJarUri);
-        AcceptanceTestUtils.uploadConnectorJar(
-            connectorJarDirectory, connectorJarPrefix, context.connectorJarUri);
-        createSpannerDataset();
-      } catch (Exception e) {
-        initializationException = e;
-        throw e;
-      }
-    }
+    AcceptanceTestUtils.uploadConnectorJar(
+        connectorJarDirectory, connectorJarPrefix, context.connectorJarUri);
+    createSpannerDataset();
 
     batchController =
         BatchControllerClient.create(
@@ -137,52 +115,8 @@ public class DataprocServerlessAcceptanceTestBase {
   @After
   public void tearDown() throws Exception {
     batchController.close();
-  }
-
-  @AfterClass
-  public static void tearDownOnce() {
-    if (initialized) {
-      try {
-        AcceptanceTestUtils.deleteGcsDir(context.testBaseGcsDir);
-      } catch (Exception e) {
-        System.err.println("Cleanup failed: " + e.getMessage());
-      }
-      deleteSpannerDatasetAndTables();
-      context = null;
-      initialized = false;
-    }
-  }
-
-  @Test
-  public void testBatch() throws Exception {
-    OperationSnapshot operationSnapshot =
-        createAndRunPythonBatch(
-            context,
-            testName,
-            "read_test_table.py",
-            null,
-            Arrays.asList(
-                context.getResultsDirUri(testName), PROJECT_ID, INSTANCE_ID, DATABASE_ID));
-    assertThat(operationSnapshot.isDone()).isTrue();
-    assertThat(operationSnapshot.getErrorMessage()).isEmpty();
-    String output = AcceptanceTestUtils.getCsv(context.getResultsDirUri(testName));
-    assertThat(output.trim()).isEqualTo("41");
-  }
-
-  @Test
-  public void testWrite() throws Exception {
-    OperationSnapshot operationSnapshot =
-        createAndRunPythonBatch(
-            context,
-            testName,
-            "write_test_table.py",
-            null,
-            Arrays.asList(
-                context.getResultsDirUri(testName), PROJECT_ID, INSTANCE_ID, DATABASE_ID));
-    assertThat(operationSnapshot.isDone()).isTrue();
-    assertThat(operationSnapshot.getErrorMessage()).isEmpty();
-    String output = AcceptanceTestUtils.getCsv(context.getResultsDirUri(testName));
-    assertTrue(output.trim().startsWith("PASS"));
+    AcceptanceTestUtils.deleteGcsDir(context.testBaseGcsDir);
+    deleteSpannerDatasetAndTables();
   }
 
   protected static void createSpannerDataset() throws Exception {
@@ -294,6 +228,6 @@ public class DataprocServerlessAcceptanceTestBase {
   }
 
   public static String generateClusterName(String testId) {
-    return String.format("spanner-connector-serverless-acceptance-%s", testId);
+    return String.format("spanner-serverless-acceptance-%s", testId);
   }
 }
