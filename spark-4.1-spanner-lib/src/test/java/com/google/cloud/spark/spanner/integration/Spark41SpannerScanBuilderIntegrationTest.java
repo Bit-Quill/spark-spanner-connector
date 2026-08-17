@@ -85,7 +85,7 @@ public class Spark41SpannerScanBuilderIntegrationTest
     ColumnWithAlias[] leftColumns =
         new ColumnWithAlias[] {
           new ColumnWithAlias("O_ORDERKEY", null),
-          new ColumnWithAlias("O_CUSTKEY", null),
+          new ColumnWithAlias("C_CUSTKEY", null),
           new ColumnWithAlias("O_ORDERSTATUS", null),
           new ColumnWithAlias("O_TOTALPRICE", null),
           new ColumnWithAlias("O_ORDERDATE", null),

@@ -64,9 +64,9 @@ def run_inner_join_tests(orders, lineitem, issues):
 
     first = joined.first()
 
-    if first.O_CUSTKEY != 36901:
-        issues.append(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
-        print(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
+    if first.C_CUSTKEY != 36901:
+        issues.append(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
+        print(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
 
     if first.L_PARTKEY != 155190:
         issues.append(f"Join value expected 155190 rows but found {first.L_PARTKEY}")
@@ -90,7 +90,7 @@ def run_join_projection_tests(orders, lineitem, issues):
         .select(
             col("o.O_ORDERKEY"),
             col("l.O_ORDERKEY"),
-            col("o.O_CUSTKEY"),
+            col("o.C_CUSTKEY"),
             col("l.L_PARTKEY"),
             col("l.L_QUANTITY")
         )
@@ -102,7 +102,7 @@ def run_join_projection_tests(orders, lineitem, issues):
     expected_columns = [
         "O_ORDERKEY",
         "O_ORDERKEY",
-        "O_CUSTKEY",
+        "C_CUSTKEY",
         "L_PARTKEY",
         "L_QUANTITY"
     ]
@@ -122,9 +122,9 @@ def run_join_projection_tests(orders, lineitem, issues):
 
     first = joined.first()
 
-    if first.O_CUSTKEY != 36901:
-        issues.append(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
-        print(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
+    if first.C_CUSTKEY != 36901:
+        issues.append(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
+        print(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
 
     if first.L_PARTKEY != 155190:
         issues.append(f"Join value expected 155190 rows but found {first.L_PARTKEY}")
@@ -274,7 +274,7 @@ def run_join_value_tests(orders, lineitem, issues):
         )
         .filter(col("o.O_ORDERKEY") == "1")
         .select(
-            col("o.O_CUSTKEY"),
+            col("o.C_CUSTKEY"),
             col("l.L_PARTKEY"),
             col("l.L_LINENUMBER")
         )
@@ -291,9 +291,9 @@ def run_join_value_tests(orders, lineitem, issues):
 
     first = joined.first()
 
-    if first.O_CUSTKEY != 36901:
-        issues.append(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
-        print(f"Join value expected 36901 rows but found {first.O_CUSTKEY}")
+    if first.C_CUSTKEY != 36901:
+        issues.append(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
+        print(f"Join value expected 36901 rows but found {first.C_CUSTKEY}")
 
     if first.L_PARTKEY != 155190:
         issues.append(f"Join value expected 155190 rows but found {first.L_PARTKEY}")
