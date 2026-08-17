@@ -229,7 +229,10 @@ object BenchmarkingTasks {
 
         // Merge configurations
         resolvedSourceTable.foreach(s => tempConfig = tempConfig + ("sourceTable" -> Json.toJson(s)))
-        tempConfig = tempConfig + ("buildSparkVersion" -> Json.toJson(sys.props.get("spark.version").getOrElse("3.3")))
+
+        tempConfig = tempConfig + (
+          "sparkVersion" -> Json.toJson(sys.props.getOrElse("spark.version", "3.3"))
+          )
 
         val finalMergedConfig = tempConfig
         val configJsonString = Json.stringify(finalMergedConfig - "databricksToken") // Do not log Databricks token
@@ -238,7 +241,7 @@ object BenchmarkingTasks {
         // Execute the Spark job
         environmentType match {
           // Combine both dataproc flavors into one case
-          case "dataproc" | "dataproc-tpch" =>
+          case "dataproc" | "dataproc-tpch" | "dataproc-tpch-predicatesql" | "dataproc-tpch-nopredicatesql" =>
             val appJar = (ThisProject / assembly).value
 
             // 1. Select the Class Name

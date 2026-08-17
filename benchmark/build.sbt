@@ -4,18 +4,29 @@ import BenchmarkingTasks._
 // spanner-spark-tests
 //
 ThisBuild / version := "0.1"
-ThisBuild / scalaVersion := "2.12.15"
 
-val sparkSqlVersions = Map(
-  "3.1" -> "3.1.3",
-  "3.2" -> "3.2.4",
-  "3.3" -> "3.3.2"
+val sparkBuilds = Map(
+  "3.1" -> ("3.1.0", "2.12.10"),
+  "3.2" -> ("3.2.0", "2.12.15"),
+  "3.3" -> ("3.3.0", "2.12.15"),
+  "3.5" -> ("3.5.7", "2.12.18"),
+  "4.0" -> ("4.0.1", "2.13.16"),
+  "4.1" -> ("4.1.2", "2.13.17")
 )
-val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
 
-val sparkSqlVersion = sparkSqlVersions.getOrElse(sparkVersion, {
-  sys.error(s"Unsupported spark.version: $sparkVersion. Supported versions are: ${sparkSqlVersions.keys.mkString(", ")}")
+// Determine the Spark version for the correct spark/spanner connctor jar
+val sparkVersion = sys.props.getOrElse("spark.version", "3.3")
+
+val sparkBuild = sparkBuilds.getOrElse(sparkVersion, {
+  sys.error(
+    s"Unsupported spark.version: $sparkVersion. " +
+      s"Supported versions: ${sparkBuilds.keys.mkString(", ")}"
+  )
 })
+
+val sparkSqlVersion = sparkBuild._1
+
+ThisBuild / scalaVersion := sparkBuild._2
 
 lazy val root = (project in file("."))
   .settings(

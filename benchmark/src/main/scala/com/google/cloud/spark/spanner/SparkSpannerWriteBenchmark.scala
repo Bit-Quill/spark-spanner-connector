@@ -50,7 +50,7 @@ object SparkSpannerWriteBenchmark {
     val instanceId = (config \ "instanceId").as[String]
     val projectId = (config \ "projectId").as[String]
     val resultsBucket = (config \ "resultsBucket").as[String]
-    val buildSparkVersion = (config \ "buildSparkVersion").as[String]
+    val sparkVersion = (config \ "sparkVersion").as[String]
 
     val mutationsPerTransaction = (config \ "mutationsPerTransaction").asOpt[Int].getOrElse(5000)
     val bytesPerTransaction = (config \ "bytesPerTransaction").asOpt[Long].getOrElse(3 * 1024 * 1024L)
@@ -92,7 +92,7 @@ object SparkSpannerWriteBenchmark {
 
     println(s"Beginning write to table '$writeTable' with mutationsPerTransaction: $mutationsPerTransaction")
     val startTime = System.nanoTime()
-    val provider = SpannerScalaUtils.getProviderClassName(buildSparkVersion)
+    val provider = SpannerScalaUtils.getProviderClassName(sparkVersion)
     dfPartitioned
       .write
       .format(provider)
@@ -118,7 +118,6 @@ object SparkSpannerWriteBenchmark {
 
     val runId = UUID.randomUUID().toString.take(8)
     val runTimestamp = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.now())
-    val sparkVersion = spark.version
     val connectorVersion = "0.0.1-SNAPSHOT"
 
     val resultJson = Json.obj(

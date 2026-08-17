@@ -75,6 +75,22 @@
       "dataSource": "tpch-sf10"
     },
     {
+      "name": "dataproc-tpch-q1-predicate",
+      "description": "TPC-H Query 1 performance test",
+      "type": "read",
+      "environment": "dataproc-tpch-predicatesql",
+      "tpcQueryNumber": 1,
+      "dataSource": "tpch-sf10"
+    },
+    {
+      "name": "dataproc-tpch-q1-nopredicate",
+      "description": "TPC-H Query 1 performance test",
+      "type": "read",
+      "environment": "dataproc-tpch-nopredicatesql",
+      "tpcQueryNumber": 1,
+      "dataSource": "tpch-sf10"
+    },
+    {
       "name": "dataproc-tpch-q2",
       "description": "TPC-H Query 2 performance test",
       "type": "read",
@@ -167,6 +183,22 @@
       "description": "TPC-H Query 13 performance test",
       "type": "read",
       "environment": "dataproc-tpch",
+      "tpcQueryNumber": 13,
+      "dataSource": "tpch-sf10"
+    },
+    {
+      "name": "dataproc-tpch-q13-predicate",
+      "description": "TPC-H Query 13 performance test",
+      "type": "read",
+      "environment": "dataproc-tpch-predicatesql",
+      "tpcQueryNumber": 13,
+      "dataSource": "tpch-sf10"
+    },
+    {
+      "name": "dataproc-tpch-q13-nopredicate",
+      "description": "TPC-H Query 13 performance test",
+      "type": "read",
+      "environment": "dataproc-tpch-nopredicatesql",
       "tpcQueryNumber": 13,
       "dataSource": "tpch-sf10"
     },

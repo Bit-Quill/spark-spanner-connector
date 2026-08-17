@@ -19,7 +19,7 @@ object SparkSpannerReadBenchmark {
     val instanceId = (config \ "instanceId").as[String]
     val databaseId = (config \ "databaseId").as[String]
     val resultsBucket = (config \ "resultsBucket").as[String]
-    val buildSparkVersion = (config \ "buildSparkVersion").as[String]
+    val sparkVersion = (config \ "sparkVersion").as[String]
 
     // TPC-H specific: Which query number to run (1-22) and the table list
     val queryNumber = (config \ "tpcQueryNumber").as[Int]
@@ -29,7 +29,17 @@ object SparkSpannerReadBenchmark {
       .appName(s"TPC-H-Query-$queryNumber")
       .getOrCreate()
 
-    val provider = SpannerScalaUtils.getProviderClassName(buildSparkVersion)
+    val enablePredicateSql =
+      (config \ "enablePredicateSql").asOpt[String].exists(_.equalsIgnoreCase("true"))
+
+    if (enablePredicateSql) {
+      spark.conf.set(
+        "spark.sql.optimizer.datasourceV2JoinPushdown",
+        "true"
+      )
+    }
+
+    val provider = SpannerScalaUtils.getProviderClassName(sparkVersion)
 
     // Register all TPC-H tables as Temp Views
     tables.foreach { tableName =>
