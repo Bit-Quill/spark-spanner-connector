@@ -9,7 +9,9 @@ ThisBuild / scalaVersion := "2.12.15"
 val sparkSqlVersions = Map(
   "3.1" -> "3.1.3",
   "3.2" -> "3.2.4",
-  "3.3" -> "3.3.2"
+  "3.3" -> "3.3.2",
+  "3.5" -> ""
+  "4.0" -> ""
 )
 val sparkVersion = sys.props.get("spark.version").getOrElse("3.3")
 

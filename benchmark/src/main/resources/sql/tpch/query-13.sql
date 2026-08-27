@@ -4,14 +4,14 @@ select
 from
     (
         select
-            c_custkey,
+            c.c_custkey,
             count(o_orderkey) as c_count  -- Alias the column here
         from
-            customer left outer join orders on
-                c_custkey = o_custkey
+            customer as c left outer join orders as o on
+                c.c_custkey = o.c_custkey
                     and o_comment not like '%pending%requests%'
         group by
-            c_custkey
+            c.c_custkey
     ) as c_orders
 group by
     c_count

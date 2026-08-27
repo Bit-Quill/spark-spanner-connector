@@ -24,6 +24,7 @@ object SparkSpannerReadBenchmark {
     // TPC-H specific: Which query number to run (1-22) and the table list
     val queryNumber = (config \ "tpcQueryNumber").as[Int]
     val tables = (config \ "tpchTables").as[Seq[String]]
+    val enablePredicateSql = (config \ "enablePredicateSql").asOpt[Seq[String]].getOrElse(Seq.empty)
 
     val spark = SparkSession.builder()
       .appName(s"TPC-H-Query-$queryNumber")
@@ -39,6 +40,7 @@ object SparkSpannerReadBenchmark {
         .option("instanceId", instanceId)
         .option("databaseId", databaseId)
         .option("table", tableName)
+        .option("enablePredicateSql", enablePredicateSql)
         .load()
         .createOrReplaceTempView(tableName)
     }

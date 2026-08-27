@@ -58,7 +58,7 @@
       "file_patterns": ["gs://my-tpch-data/orders.csv"],
       "columns": [
         {"column_name": "O_ORDERKEY", "type_name": "INT64"},
-        {"column_name": "O_CUSTKEY", "type_name": "INT64"},
+        {"column_name": "C_CUSTKEY", "type_name": "INT64"},
         {"column_name": "O_ORDERSTATUS", "type_name": "STRING"},
         {"column_name": "O_TOTALPRICE", "type_name": "NUMERIC"},
         {"column_name": "O_ORDERDATE", "type_name": "DATE"},
