@@ -108,7 +108,7 @@ Before you begin, make sure you have the following tools installed:
 - Java (version 8 or higher)
 - Apache Maven
 - sbt (Scala Build Tool)
-- Google Cloud SDK (`gcloud`)j
+- Google Cloud SDK (`gcloud`)
 - `jq` (a lightweight and flexible command-line JSON processor)
 
 ## Authentication

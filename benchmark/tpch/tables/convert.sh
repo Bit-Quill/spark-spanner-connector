@@ -1,11 +1,12 @@
 #!/bin/sh
 
-perl -i -pe 's/\|$//' customer.csv
-perl -i -pe 's/\|$//' orders.csv
-perl -i -pe 's/\|$//' part.csv
-perl -i -pe 's/\|$//' partsupp.csv
-perl -i -pe 's/\|$//' region.csv
-perl -i -pe 's/\|$//' supplier.csv
+perl -pe 's/\|$//' customer.tbl > customer.csv
+perl -pe 's/\|$//' orders.tbl > orders.csv
+perl -pe 's/\|$//' part.tbl > part.csv
+perl -pe 's/\|$//' partsupp.tbl > partsupp.csv
+perl -pe 's/\|$//' region.tbl > region.csv
+perl -pe 's/\|$//' supplier.tbl > supplier.csv
+perl -pe 's/\|$//' nation.tbl > nation.csv
 
 # Add C_CUSTKEY to LINEITEM using ORDERS.O_ORDERKEY -> ORDERS.O_CUSTKEY
 perl -F'\|' -lane '
